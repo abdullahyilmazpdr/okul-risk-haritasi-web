@@ -26,11 +26,11 @@ export async function POST(req: NextRequest) {
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            from: 'Okul Risk Sistemi <onboarding@resend.dev>',
+            from: 'Okul Risk Haritası Sistemi <bilgi@mail.onlinepdr.com>',
             to: [targetEmail],
             subject: `[${schoolKey}] Okul Yetkisi Devir Onay Kodu: ${code}`,
             html: `
-              <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; rounded: 12px;">
+              <div style="font-family: sans-serif; max-width: 500px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 12px;">
                 <h2 style="color: #1e293b; margin-bottom: 8px;">Okul Risk Haritası ve ŞÖK Sistemi</h2>
                 <p style="color: #64748b; font-size: 14px;"><strong>${schoolName || schoolKey}</strong> için yönetim yetkisi devir talebinde bulunuldu.</p>
                 <div style="background-color: #f1f5f9; padding: 16px; border-radius: 8px; text-align: center; margin: 20px 0;">
@@ -45,7 +45,10 @@ export async function POST(req: NextRequest) {
 
         if (!emailRes.ok) {
           const errData = await emailRes.json().catch(() => ({}));
-          console.warn('Resend API hatası:', errData);
+          console.error('Resend API hatası:', errData);
+          return NextResponse.json({ 
+            error: `E-posta gönderim sağlayıcısı hatası: ${errData.message || 'Bilinmeyen hata'}` 
+          }, { status: 500 });
         }
       } catch (err) {
         console.warn('E-posta gönderim istisnası:', err);
