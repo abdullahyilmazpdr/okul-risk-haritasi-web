@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /teacher/
+Disallow: /api/
+
+Sitemap: https://okulrisk.vercel.app/sitemap.xml
