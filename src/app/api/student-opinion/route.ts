@@ -13,7 +13,8 @@ const RISK_SHEET_HEADERS = [
   'Görevi / Branşı',
   'ŞÖK Görüşü',
   'Risk Haritası Maddeleri',
-  'Kayıt Tarihi'
+  'Kayıt Tarihi',
+  'Grup Eğitimi Günleri'
 ];
 
 function cleanTr(str: string): string {
@@ -94,6 +95,20 @@ function extractRecordFromRow(r: any[]) {
     sNum = sNum.slice(0, -2);
   }
 
+  let groupDays: string[] = [];
+  const rawGroupDays = r[colOffset + 8];
+  if (rawGroupDays) {
+    const str = String(rawGroupDays).trim();
+    if (str.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(str);
+        if (Array.isArray(parsed)) groupDays = parsed.map(String);
+      } catch (e) {}
+    } else if (str) {
+      groupDays = str.split(',').map(s => s.trim()).filter(Boolean);
+    }
+  }
+
   return {
     num: sNum,
     name: String(r[colOffset + 1] || '').trim(),
@@ -102,7 +117,8 @@ function extractRecordFromRow(r: any[]) {
     branch: String(r[colOffset + 4] || '').trim(),
     opinion: String(r[colOffset + 5] || '').trim(),
     risks: parseRisks(r[colOffset + 6]),
-    date: String(r[colOffset + 7] || '').trim()
+    date: String(r[colOffset + 7] || '').trim(),
+    groupTrainingDays: groupDays
   };
 }
 
@@ -153,8 +169,9 @@ export async function GET(req: NextRequest) {
             branch: r.branch,
             opinion: r.opinion,
             risks: parseRisks(r.risks),
-            date: r.date
-          })).filter(o => o.opinion || (o.risks && o.risks.length > 0));
+            date: r.date,
+            groupTrainingDays: r.groupTrainingDays || []
+          })).filter(o => o.opinion || (o.risks && o.risks.length > 0) || (o.groupTrainingDays && o.groupTrainingDays.length > 0));
 
           return NextResponse.json({
             success: true,
@@ -294,6 +311,18 @@ export async function POST(req: NextRequest) {
       risksToSave = [];
     }
 
+    // Grup Eğitimi Günleri: Sınıf Rehber Öğretmeni veya İdareci tarafından belirlenir
+    let groupDaysToSave: string[] = [];
+    if (isCounselorOrAdmin) {
+      if (Array.isArray(body.groupTrainingDays)) {
+        groupDaysToSave = body.groupTrainingDays.map(String);
+      } else if (existingRec && existingRec.groupTrainingDays) {
+        groupDaysToSave = existingRec.groupTrainingDays;
+      }
+    } else if (existingRec && existingRec.groupTrainingDays) {
+      groupDaysToSave = existingRec.groupTrainingDays;
+    }
+
     recordsMap.set(incomingKey, {
       num: sNum,
       name: studentName || existingRec?.name || '',
@@ -302,7 +331,8 @@ export async function POST(req: NextRequest) {
       branch: incomingBranch || existingRec?.branch || (isCounselorOrAdmin ? 'Sınıf Rehber Öğretmeni' : 'Ders Öğretmeni'),
       opinion: opinion !== undefined ? String(opinion).trim() : (existingRec?.opinion || ''),
       risks: risksToSave,
-      date: dateStr
+      date: dateStr,
+      groupTrainingDays: groupDaysToSave
     });
 
     // Kayıtları öğrenci numarasına göre sırala
@@ -313,7 +343,7 @@ export async function POST(req: NextRequest) {
       return numA - numB;
     });
 
-    // A:H aralığına yazılacak temiz tablo
+    // A:I aralığına yazılacak temiz tablo
     const cleanSheetRows = [
       RISK_SHEET_HEADERS,
       ...sortedRecords.map(r => [
@@ -324,16 +354,17 @@ export async function POST(req: NextRequest) {
         r.branch,
         r.opinion || '',
         JSON.stringify(parseRisks(r.risks)),
-        r.date
+        r.date,
+        JSON.stringify(r.groupTrainingDays || [])
       ])
     ];
 
-    // Temiz tabloyu A1'den itibaren nizami şekilde yaz
-    await updateSheetRange(accessToken, spreadsheetId, `OkulRisk!A1:H${cleanSheetRows.length}`, cleanSheetRows);
+    // Temiz tabloyu A1'den itibaren nizami şekilde yaz (A'dan I'ya)
+    await updateSheetRange(accessToken, spreadsheetId, `OkulRisk!A1:I${cleanSheetRows.length}`, cleanSheetRows);
 
     // Eğer eski satır sayısı fazlaysa alt satırlardaki eski verileri temizle
     if (rawRows.length > cleanSheetRows.length && cleanSheetRows.length > 1) {
-      await clearSheetRange(accessToken, spreadsheetId, `OkulRisk!A${cleanSheetRows.length + 1}:H${rawRows.length + 5}`);
+      await clearSheetRange(accessToken, spreadsheetId, `OkulRisk!A${cleanSheetRows.length + 1}:I${rawRows.length + 5}`);
     }
 
     // KVKK Denetim İzi: Risk veya Görüş girişini arka planda kaydet

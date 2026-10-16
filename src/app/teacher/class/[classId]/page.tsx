@@ -14,7 +14,7 @@ function ClassDetailsContent() {
   const [students, setStudents] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [currentClassName, setCurrentClassName] = useState<string>('');
-  const [studentStatuses, setStudentStatuses] = useState<Record<string, { sokCount: number; mySokFilled: boolean; riskCount: number }>>({});
+  const [studentStatuses, setStudentStatuses] = useState<Record<string, { sokCount: number; mySokFilled: boolean; riskCount: number; groupTrainingDays?: string[] }>>({});
 
   useEffect(() => {
     let currentTeacher: any = null;
@@ -131,7 +131,7 @@ function ClassDetailsContent() {
         });
         const opJson = await opRes.json();
 
-        const statuses: Record<string, { sokCount: number; mySokFilled: boolean; riskCount: number }> = {};
+        const statuses: Record<string, { sokCount: number; mySokFilled: boolean; riskCount: number; groupTrainingDays: string[] }> = {};
         const tUser = (currentTeacher?.username || '').toLowerCase().trim();
         const tName = (currentTeacher?.name || '').toLowerCase().trim();
 
@@ -140,6 +140,7 @@ function ClassDetailsContent() {
           let rCount = 0;
           let opCount = 0;
           let myFilled = false;
+          let gDays: string[] = [];
 
           // LocalStorage kontrolü
           const evalRaw = localStorage.getItem(`student_eval_${sNum}`);
@@ -147,6 +148,7 @@ function ClassDetailsContent() {
             try {
               const parsed = JSON.parse(evalRaw);
               if (Array.isArray(parsed.risks)) rCount = parsed.risks.length;
+              if (Array.isArray(parsed.groupTrainingDays)) gDays = parsed.groupTrainingDays;
               if (parsed.opinions && typeof parsed.opinions === 'object') {
                 for (const [uKey, opObj] of Object.entries<any>(parsed.opinions)) {
                   if (opObj?.opinion && opObj.opinion.trim()) {
@@ -172,10 +174,13 @@ function ClassDetailsContent() {
               if (Array.isArray(op.risks) && op.risks.length > 0) {
                 rCount = Math.max(rCount, op.risks.length);
               }
+              if (Array.isArray(op.groupTrainingDays) && op.groupTrainingDays.length > 0) {
+                gDays = op.groupTrainingDays;
+              }
             }
           }
 
-          statuses[sNum] = { sokCount: opCount, mySokFilled: myFilled, riskCount: rCount };
+          statuses[sNum] = { sokCount: opCount, mySokFilled: myFilled, riskCount: rCount, groupTrainingDays: gDays };
         }
 
         setStudentStatuses(statuses);
@@ -360,6 +365,11 @@ function ClassDetailsContent() {
                               }`}>
                                 {hasRisk ? `Risk Haritası (${status.riskCount} Madde)` : 'Risk Haritası Boş'}
                               </span>
+                              {status.groupTrainingDays && status.groupTrainingDays.length > 0 && (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-purple-100 text-purple-800 border border-purple-200">
+                                  Grup Eğitimi ({status.groupTrainingDays.join(', ')})
+                                </span>
+                              )}
                             </>
                           )}
                         </div>

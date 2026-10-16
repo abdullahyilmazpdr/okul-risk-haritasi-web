@@ -18,6 +18,9 @@ export const metadata: Metadata = {
     default: "Okul Risk Haritası ve ŞÖK Sistemi | MEB Uyumlu E-Tablo Otomasyonu",
     template: "%s | Okul Risk Haritası ve ŞÖK Sistemi"
   },
+  other: {
+    "google-adsense-account": "ca-pub-6640600529852358"
+  },
   description: "MEB Özel Eğitim ve Rehberlik Hizmetleri Genel Müdürlüğü (ÖRGM) ve RAM standartlarına tam uyumlu Okul Risk Haritası ve ŞÖK (Şube Öğretmenler Kurulu) otomasyonu. Verileriniz kendi Google Drive E-Tablonuzda %100 KVKK uyumlu olarak saklanır.",
   keywords: [
     "okul risk haritası",
@@ -53,7 +56,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "tr_TR",
-    url: "https://okulrisk.vercel.app",
+    url: "https://risk.onlinepdr.com",
     title: "Okul Risk Haritası ve ŞÖK Sistemi | MEB Uyumlu E-Tablo Otomasyonu",
     description: "MEB ve RAM standartlarına tam uyumlu, sunucusuz ve %100 güvenli Google Drive tabanlı Okul Risk Haritası ve ŞÖK yönetim platformu.",
     siteName: "Okul Risk Haritası ve ŞÖK Sistemi",
@@ -64,7 +67,7 @@ export const metadata: Metadata = {
     description: "MEB ve RAM uyumlu, Google Drive üzerinde çalışan Okul Risk Haritası otomasyonu.",
   },
   alternates: {
-    canonical: "https://okulrisk.vercel.app",
+    canonical: "https://risk.onlinepdr.com",
   },
 };
 
@@ -78,7 +81,40 @@ export default function RootLayout({
       lang="tr"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        {/* Google tag (gtag.js) */}
+        <script async src="https://www.googletagmanager.com/gtag/js?id=G-XVH8NX75JE" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `
+              window.dataLayer = window.dataLayer || [];
+              function gtag(){dataLayer.push(arguments);}
+              gtag('js', new Date());
+              gtag('config', 'G-XVH8NX75JE');
+            `,
+          }}
+        />
+        {/* Google Tag Manager */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+})(window,document,'script','dataLayer','GTM-PFZ4T344');`,
+          }}
+        />
+      </head>
       <body className="min-h-full flex flex-col">
+        {/* Google Tag Manager (noscript) */}
+        <noscript>
+          <iframe
+            src="https://www.googletagmanager.com/ns.html?id=GTM-PFZ4T344"
+            height="0"
+            width="0"
+            style={{ display: "none", visibility: "hidden" }}
+          />
+        </noscript>
         <Toaster
           position="top-right"
           toastOptions={{

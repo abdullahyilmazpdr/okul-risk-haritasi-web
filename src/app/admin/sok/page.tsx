@@ -306,13 +306,20 @@ export default function AdminSokPage() {
               </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs">
+            <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs">
               <span className="font-medium text-slate-800">
                 {op.teacherName} <span className="text-slate-400 font-normal">({op.branch})</span>
               </span>
-              <span className="text-[11px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-medium">
-                Kayıtlı
-              </span>
+              <div className="flex items-center gap-2">
+                {op.groupTrainingDays && op.groupTrainingDays.length > 0 && (
+                  <span className="text-[11px] font-semibold text-purple-700 bg-purple-50 border border-purple-200 px-2.5 py-0.5 rounded-full">
+                    Grup Eğitimi: {op.groupTrainingDays.join(', ')}
+                  </span>
+                )}
+                <span className="text-[11px] text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full font-medium">
+                  Kayıtlı
+                </span>
+              </div>
             </div>
           </div>
         ))}

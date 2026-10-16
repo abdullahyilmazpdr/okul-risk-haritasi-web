@@ -41,6 +41,11 @@ function StudentDetailsContent() {
   const [searchTerm, setSearchTerm] = useState('');
   const [otherOpinions, setOtherOpinions] = useState<any[]>([]);
 
+  // Grup Eğitimine Hazırlık Eğitimi Durumu ve Seçilen Günler
+  const [isGroupTraining, setIsGroupTraining] = useState(false);
+  const [groupDays, setGroupDays] = useState<string[]>([]);
+  const WEEK_DAYS = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma'];
+
   // Oturum ve öğrenci verilerini yükleme
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -99,6 +104,11 @@ function StudentDetailsContent() {
             setSelectedRisks(new Set(evalObj.risks));
           }
 
+          if (Array.isArray(evalObj.groupTrainingDays) && evalObj.groupTrainingDays.length > 0) {
+            setIsGroupTraining(true);
+            setGroupDays(evalObj.groupTrainingDays);
+          }
+
           if (evalObj.opinions && typeof evalObj.opinions === 'object') {
             for (const [uKey, opData] of Object.entries<any>(evalObj.opinions)) {
               if (uKey.toLowerCase().trim() === teacherUser) {
@@ -117,6 +127,10 @@ function StudentDetailsContent() {
             const legacyData = JSON.parse(legacyCached);
             if (legacyData.risks && Array.isArray(legacyData.risks)) {
               setSelectedRisks(new Set(legacyData.risks));
+            }
+            if (Array.isArray(legacyData.groupTrainingDays) && legacyData.groupTrainingDays.length > 0) {
+              setIsGroupTraining(true);
+              setGroupDays(legacyData.groupTrainingDays);
             }
             // Yalnızca eski kaydı yazan kullanıcı adı bu öğretmen ise kişisel kutuya aktar
             if (legacyData.teacherUsername && legacyData.teacherUsername.toLowerCase().trim() === teacherUser) {
@@ -167,6 +181,10 @@ function StudentDetailsContent() {
                 }
                 if (op.risks && Array.isArray(op.risks) && op.risks.length > 0) {
                   setSelectedRisks(new Set(op.risks));
+                }
+                if (op.groupTrainingDays && Array.isArray(op.groupTrainingDays) && op.groupTrainingDays.length > 0) {
+                  setIsGroupTraining(true);
+                  setGroupDays(op.groupTrainingDays);
                 }
               }
               if (remoteOthers.length > 0) {
@@ -235,8 +253,11 @@ function StudentDetailsContent() {
         } catch (e) {}
       }
 
+      const activeGroupDays = isGroupTraining ? groupDays : [];
+
       if (isClassTeacher || isAdmin) {
         evalData.risks = Array.from(selectedRisks);
+        evalData.groupTrainingDays = activeGroupDays;
       }
 
       if (!evalData.opinions) evalData.opinions = {};
@@ -266,6 +287,7 @@ function StudentDetailsContent() {
             branch: teacherBranch,
             opinion: sokOpinion.trim(),
             risks: isClassTeacher || isAdmin ? Array.from(selectedRisks) : [],
+            groupTrainingDays: isClassTeacher || isAdmin ? activeGroupDays : [],
             spreadsheetId: storedSpreadsheetId,
             accessToken: storedToken,
             schoolKey: teacher?.schoolKey || localStorage.getItem('last_school_key') || '',
@@ -358,54 +380,10 @@ function StudentDetailsContent() {
         </div>
       </div>
 
-      {/* Sınıf Öğretmeni ise veya İdareci ise 2 kolon; Ders Öğretmeni ise sadece ŞÖK görüşü tek kolon */}
-      <div className={`grid grid-cols-1 ${!isSubjectTeacher ? 'lg:grid-cols-2' : ''} gap-8`}>
+      {/* Sınıf Öğretmeni veya İdareci ise: SOLDA TÜM RİSKLER (Tümü görünecek şekilde uzanır), SAĞDA ŞÖK GÖRÜŞÜ & GRUP EĞİTİMİ. Ders Öğretmeni ise sadece ŞÖK görüşü. */}
+      <div className={`grid grid-cols-1 ${!isSubjectTeacher ? 'lg:grid-cols-2 items-start' : ''} gap-8`}>
         
-        {/* ŞÖK Öğretmen Görüşü (Tüm Öğretmenler Kendi Görüşünü Yazar ve Değiştirebilir) */}
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between">
-          <div>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
-                <MessageSquarePlus className="w-5 h-5" />
-              </div>
-              <div>
-                <h2 className="text-lg font-bold text-slate-900">
-                  {isSubjectTeacher ? 'Ders Öğretmeni ŞÖK Görüşü' : 'Kişisel ŞÖK Görüşünüz'}
-                </h2>
-                <p className="text-xs text-slate-400">
-                  {isSubjectTeacher 
-                    ? 'Bu alana kendi dersinizle ilgili değerlendirmenizi yazınız. Dilediğiniz zaman güncelleyebilirsiniz.'
-                    : 'Öğrencinin genel durumu ve kurul kararları hakkındaki görüşünüz.'
-                  }
-                </p>
-              </div>
-            </div>
-            
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600 mb-4 flex items-start gap-2">
-              <Info className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
-              <span>
-                Öğrencinin kendi dersinizdeki akademik performansı, katılımı, devam durumu ve ödev alışkanlıkları hakkındaki görüşlerinizi yazınız.
-              </span>
-            </div>
-            
-            <textarea
-              value={sokOpinion}
-              onChange={(e) => setSokOpinion(e.target.value)}
-              placeholder="Örn: Derse düzenli katılım göstermektedir. Bireysel etkinliklerde istekli, ancak grup çalışmalarında yönlendirmeye ihtiyaç duyuyor..."
-              className="w-full min-h-[260px] p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm text-slate-800 leading-relaxed placeholder:text-slate-400"
-            />
-          </div>
-
-          <div className="pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-            <span className="flex items-center gap-1.5 font-medium text-slate-700">
-              <Edit3 className="w-3.5 h-3.5 text-indigo-600" />
-              {teacher?.name || teacher?.username || 'Öğretmen'} (Görüşünüzü dilediğiniz zaman değiştirebilirsiniz)
-            </span>
-            <span>{sokOpinion.length} Karakter</span>
-          </div>
-        </div>
-
-        {/* MEB Okul Risk Haritası Modülü (SADECE SINIF REHBER ÖĞRETMENİ VE İDARECİYE AÇIK) */}
+        {/* SOL KOLON: MEB Okul Risk Haritası Modülü (SADECE SINIF REHBER ÖĞRETMENİ VE İDARECİYE AÇIK) */}
         {!isSubjectTeacher && (
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between">
             <div>
@@ -416,7 +394,7 @@ function StudentDetailsContent() {
                   </div>
                   <div>
                     <h2 className="text-lg font-bold text-slate-900">MEB Okul Risk Haritası (36 Madde)</h2>
-                    <p className="text-xs text-slate-400">Sınıf Rehber Öğretmeni Zorunlu Girişi</p>
+                    <p className="text-xs text-slate-400">Tüm riskler aşağıda tek seferde listelenmiştir.</p>
                   </div>
                 </div>
                 <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
@@ -429,19 +407,19 @@ function StudentDetailsContent() {
               </div>
 
               {/* Arama Çubuğu */}
-              <div className="mb-3">
+              <div className="mb-4">
                 <input 
                   type="text"
                   placeholder="36 risk maddesi içinde ara (örn: devamsızlık, şiddet, vefat)..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs focus:ring-2 focus:ring-amber-500 focus:outline-none"
                 />
               </div>
               
-              {/* 36 Resmi Madde Listesi */}
-              <div className="overflow-y-auto max-h-[300px] pr-1 space-y-2 scrollbar-thin">
-                {filteredRiskItems.map((item, index) => {
+              {/* 36 Resmi Madde Listesi - Aşağıya Doğru Tamamı Açık (Scroll Yok) */}
+              <div className="space-y-2">
+                {filteredRiskItems.map((item) => {
                   const originalIndex = MEB_OFFICIAL_RISK_ITEMS.indexOf(item);
                   const isSelected = selectedRisks.has(originalIndex);
                   return (
@@ -449,7 +427,7 @@ function StudentDetailsContent() {
                       key={originalIndex} 
                       className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
                         isSelected 
-                          ? 'bg-amber-50/80 border-amber-300 text-amber-950 shadow-xs' 
+                          ? 'bg-amber-50/90 border-amber-400 text-amber-950 shadow-xs' 
                           : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                       }`}
                     >
@@ -470,59 +448,184 @@ function StudentDetailsContent() {
               </div>
             </div>
 
-            <div className="pt-4 border-t border-slate-100 text-xs text-slate-500 flex items-center justify-between">
-              <span>* Seçilen maddeler okul risk haritası matrisine otomatik yansıtılır.</span>
+            <div className="pt-4 mt-4 border-t border-slate-100 text-xs text-slate-500 flex items-center justify-between">
+              <span>* Seçilen risk maddeleri okul risk haritası matrisine otomatik yansıtılır.</span>
             </div>
           </div>
         )}
-      </div>
 
-      {/* DİĞER ÖĞRETMENLERİN ŞÖK GÖRÜŞLERİ:
-          - Sınıf Rehber Öğretmeni ve İdareci: TÜM branş öğretmenlerinin yazdığı görüşleri görebilir (ancak başkasının görüşünü DEĞİŞTİREMEZ).
-          - Ders Öğretmeni: Diğer öğretmenlerin görüşlerini göremez.
-      */}
-      {!isSubjectTeacher && (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6">
-          <div className="flex items-center justify-between mb-4">
+        {/* SAĞ KOLON: ŞÖK Öğretmen Görüşü & Grup Eğitimine Hazırlık Alanı */}
+        <div className="space-y-6 lg:sticky lg:top-6">
+          {/* ŞÖK Görüşü Kutusu */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between">
             <div>
-              <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-indigo-600" />
-                Diğer Branş Öğretmenlerinin ŞÖK Görüşleri ({otherOpinions.length})
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Sınıf öğretmeni ve idareciler bu görüşleri kurul kararları için okuyabilir; ancak öğretmenlerin orijinal görüşleri değiştirilemez.
-              </p>
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
+                  <MessageSquarePlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-bold text-slate-900">
+                    {isSubjectTeacher ? 'Ders Öğretmeni ŞÖK Görüşü' : 'Kişisel ŞÖK Görüşünüz'}
+                  </h2>
+                  <p className="text-xs text-slate-400">
+                    {isSubjectTeacher 
+                      ? 'Bu alana kendi dersinizle ilgili değerlendirmenizi yazınız.'
+                      : 'Öğrencinin genel durumu ve kurul kararları hakkındaki görüşünüz.'
+                    }
+                  </p>
+                </div>
+              </div>
+              
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600 mb-4 flex items-start gap-2">
+                <Info className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
+                <span>
+                  Öğrencinin akademik performansı, derse katılımı, devam durumu ve genel davranışları hakkındaki değerlendirmenizi yazınız.
+                </span>
+              </div>
+              
+              <textarea
+                value={sokOpinion}
+                onChange={(e) => setSokOpinion(e.target.value)}
+                placeholder="Örn: Derse düzenli katılım göstermektedir. Bireysel etkinliklerde istekli, ancak grup çalışmalarında yönlendirmeye ihtiyaç duyuyor..."
+                className="w-full min-h-[220px] p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm text-slate-800 leading-relaxed placeholder:text-slate-400"
+              />
             </div>
-            <div className="flex items-center gap-1.5 text-xs text-slate-400 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
-              <Lock className="w-3.5 h-3.5 text-slate-400" /> Salt Okunur
+
+            <div className="pt-4 mt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+              <span className="flex items-center gap-1.5 font-medium text-slate-700">
+                <Edit3 className="w-3.5 h-3.5 text-indigo-600" />
+                {teacher?.name || teacher?.username || 'Öğretmen'}
+              </span>
+              <span>{sokOpinion.length} Karakter</span>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {otherOpinions.map((op, idx) => (
-              <div key={idx} className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
+          {/* Grup Eğitimine Hazırlık Modülü (ŞÖK Görüşünün Hemen Altında) */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-start gap-3">
+                <div className={`p-2.5 rounded-xl ${isGroupTraining ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Grup Eğitimine Hazırlık</h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Öğrenci grup eğitimine hazırlık programına dahil edilecekse işaretleyiniz.
+                  </p>
+                </div>
+              </div>
+              
+              {/* Ana Seçim Tik Kutusu */}
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={isGroupTraining} 
+                  onChange={(e) => {
+                    const checked = e.target.checked;
+                    setIsGroupTraining(checked);
+                    if (!checked) setGroupDays([]);
+                  }}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+              </label>
+            </div>
+
+            {/* Tiklenince Açılan Gün Seçim Alanı */}
+            {isGroupTraining && (
+              <div className="pt-3 border-t border-slate-100 space-y-3">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs">
-                      {op.teacherName[0]}
-                    </div>
-                    <div>
-                      <span className="font-bold text-slate-800 text-xs block">{op.teacherName}</span>
-                      <span className="text-[11px] text-slate-400">{op.branch}</span>
-                    </div>
-                  </div>
-                  <span className="text-[11px] text-slate-400 flex items-center gap-1 font-mono">
-                    <Calendar className="w-3 h-3" /> {op.date}
+                  <span className="text-xs font-semibold text-slate-700">
+                    Öğrencinin Geleceği Günler:
+                  </span>
+                  <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-100">
+                    {groupDays.length > 0 ? `${groupDays.length} Gün Seçildi` : 'Gün Seçiniz'}
                   </span>
                 </div>
-                <p className="text-xs text-slate-600 leading-relaxed bg-white p-3 rounded-lg border border-slate-100">
-                  "{op.opinion}"
-                </p>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {WEEK_DAYS.map((day) => {
+                    const isDaySelected = groupDays.includes(day);
+                    return (
+                      <button
+                        type="button"
+                        key={day}
+                        onClick={() => {
+                          if (isDaySelected) {
+                            setGroupDays(groupDays.filter(d => d !== day));
+                          } else {
+                            setGroupDays([...groupDays, day]);
+                          }
+                        }}
+                        className={`px-3 py-2.5 rounded-xl text-xs font-medium border flex items-center justify-center gap-2 transition-all ${
+                          isDaySelected
+                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                        }`}
+                      >
+                        <CheckCircle2 className={`w-3.5 h-3.5 ${isDaySelected ? 'text-white' : 'text-slate-300'}`} />
+                        <span>{day}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {groupDays.length > 0 && (
+                  <p className="text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                    📌 Öğrenci haftalık <strong>{groupDays.join(', ')}</strong> günlerinde grup eğitimine hazırlık için gelecektir.
+                  </p>
+                )}
               </div>
-            ))}
+            )}
           </div>
+
+          {/* DİĞER ÖĞRETMENLERİN ŞÖK GÖRÜŞLERİ (Sağ sütunda veya altta okunabilir) */}
+          {!isSubjectTeacher && otherOpinions.length > 0 && (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-indigo-600" />
+                    Diğer Branş Öğretmenlerinin ŞÖK Görüşleri ({otherOpinions.length})
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    Sınıf öğretmeni ve idareciler için salt okunur görüntüleme
+                  </p>
+                </div>
+                <div className="flex items-center gap-1.5 text-xs text-slate-400 bg-slate-50 px-2.5 py-1 rounded-lg border border-slate-200">
+                  <Lock className="w-3.5 h-3.5 text-slate-400" /> Salt Okunur
+                </div>
+              </div>
+
+              <div className="space-y-3 max-h-[350px] overflow-y-auto pr-1 scrollbar-thin">
+                {otherOpinions.map((op, idx) => (
+                  <div key={idx} className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-700 flex items-center justify-center font-bold text-xs">
+                          {op.teacherName[0]}
+                        </div>
+                        <div>
+                          <span className="font-bold text-slate-800 text-xs block">{op.teacherName}</span>
+                          <span className="text-[10px] text-slate-400">{op.branch}</span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] text-slate-400 flex items-center gap-1 font-mono">
+                        <Calendar className="w-3 h-3" /> {op.date}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 leading-relaxed bg-white p-2.5 rounded-lg border border-slate-100">
+                      "{op.opinion}"
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      )}
+      </div>
+
+
     </div>
   );
 }
