@@ -287,6 +287,8 @@ export async function POST(req: NextRequest) {
     const isCounselorOrAdmin = 
       bLower.includes('sinif') || 
       bLower.includes('rehber') || 
+      bLower.includes('ozel egitim') || 
+      bLower.includes('ozelegitim') || 
       bLower.includes('mudur') || 
       bLower.includes('idare') ||
       tLower.includes('sinif') ||
@@ -301,7 +303,7 @@ export async function POST(req: NextRequest) {
     // Sınıf Öğretmeni veya İdareci ise gelen riskler kaydedilir.
     let risksToSave: number[] = [];
     if (isCounselorOrAdmin) {
-      if (Array.isArray(risks) && risks.length > 0) {
+      if (Array.isArray(risks)) {
         risksToSave = parseRisks(risks);
       } else if (existingRec && existingRec.risks) {
         risksToSave = parseRisks(existingRec.risks);

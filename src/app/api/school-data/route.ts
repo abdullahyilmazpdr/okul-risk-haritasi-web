@@ -81,10 +81,11 @@ export async function GET(req: NextRequest) {
       }, { status: 401 });
     }
 
-    // E-Tablo'dan Öğrenciler ve Öğretmenler sayfalarını doğrudan oku (Firestore'da öğrenci/öğretmen verisi tutulmaz)
-    const [studentRows, teacherRows] = await Promise.all([
+    // E-Tablo'dan Öğrenciler, Öğretmenler ve OkulRisk sayfalarını doğrudan oku (Firestore'da öğrenci/öğretmen verisi tutulmaz)
+    const [studentRows, teacherRows, evalRows] = await Promise.all([
       readFromSheet(token, spreadsheetId, 'Öğrenciler!A2:C').catch(() => []),
-      readFromSheet(token, spreadsheetId, 'Öğretmenler!A2:E').catch(() => [])
+      readFromSheet(token, spreadsheetId, 'Öğretmenler!A2:E').catch(() => []),
+      readFromSheet(token, spreadsheetId, 'OkulRisk!A2:B').catch(() => [])
     ]);
 
     const students = (studentRows || []).map((row: any[]) => ({
@@ -92,6 +93,17 @@ export async function GET(req: NextRequest) {
       number: row[1] || '',
       name: row[2] || '',
     })).filter((s: any) => s.number || s.name);
+
+    const evaluatedStudentNums = new Set<string>();
+    for (const r of evalRows || []) {
+      const sNum = String(r?.[0] || '').trim().replace(/^['"]|['"]$/g, '');
+      if (sNum && !sNum.toLowerCase().includes('ogrenci') && !sNum.toLowerCase().includes('öğrenci')) {
+        evaluatedStudentNums.add(sNum);
+      }
+    }
+    const riskFilledRatio = students.length > 0
+      ? Math.min(100, Math.round((evaluatedStudentNums.size / students.length) * 100))
+      : 0;
 
     let needsSheetPasswordRepair = false;
     const rawTeachers = (teacherRows || []).map((row: any[]) => {
@@ -176,7 +188,8 @@ export async function GET(req: NextRequest) {
         teachers,
         stats: {
           totalStudents: students.length,
-          totalTeachers: teachers.length
+          totalTeachers: teachers.length,
+          riskFilledRatio
         }
       }
     });

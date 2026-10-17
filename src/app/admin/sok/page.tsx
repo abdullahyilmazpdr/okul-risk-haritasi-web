@@ -23,7 +23,31 @@ import {
 import toast from 'react-hot-toast';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { auth } from '@/lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import { getSchoolData } from '@/lib/db';
+
+function normalizeTurkish(text: string): string {
+  return (text || '')
+    .replace(/İ/g, 'i')
+    .replace(/I/g, 'i')
+    .replace(/ı/g, 'i')
+    .replace(/Ğ/g, 'g')
+    .replace(/ğ/g, 'g')
+    .replace(/Ü/g, 'u')
+    .replace(/ü/g, 'u')
+    .replace(/Ş/g, 's')
+    .replace(/ş/g, 's')
+    .replace(/Ö/g, 'o')
+    .replace(/ö/g, 'o')
+    .replace(/Ç/g, 'c')
+    .replace(/ç/g, 'c')
+    .toLowerCase();
+}
+
+function getClassBaseKey(raw: string): string {
+  const withoutParens = (raw || '').replace(/\([^)]*\)/g, ' ');
+  return normalizeTurkish(withoutParens).replace(/[^a-z0-9]/g, '');
+}
 
 export default function AdminSokPage() {
   const [searchTerm, setSearchTerm] = useState('');
@@ -36,7 +60,7 @@ export default function AdminSokPage() {
   // ŞÖK Karar Tutanağı Modalı ve Alanları
   const [showMinutesModal, setShowMinutesModal] = useState(false);
   const [minutesClass, setMinutesClass] = useState('');
-  const [minutesTerm, setMinutesTerm] = useState('1. Dönem');
+  const [minutesTerm, setMinutesTerm] = useState('1. Dönem Başı');
   const [minutesDate, setMinutesDate] = useState('2025-09-15');
   const [currentAcademicYear, setCurrentAcademicYear] = useState('2025-2026');
   const [decisionItems, setDecisionItems] = useState<string[]>([
@@ -66,7 +90,7 @@ export default function AdminSokPage() {
       const data = await res.json();
 
       if (data.success && Array.isArray(data.opinions) && data.opinions.length > 0) {
-        setOpinionsList(data.opinions.filter((o: any) => o.opinion && o.opinion.trim()));
+        setOpinionsList(data.opinions.filter((o: any) => (o.opinion && o.opinion.trim()) || (Array.isArray(o.groupTrainingDays) && o.groupTrainingDays.length > 0)));
       } else {
         setOpinionsList([]);
       }
@@ -93,15 +117,46 @@ export default function AdminSokPage() {
       }
     }
 
-    if (auth.currentUser) {
-      getSchoolData(auth.currentUser.uid).then((data) => {
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const activeKey = typeof window !== 'undefined' ? localStorage.getItem('admin_active_school_key') : null;
+        const data = await getSchoolData(user.uid, activeKey || undefined);
         if (data?.schoolName) setSchoolName(data.schoolName);
-      });
-    }
+
+        const sheetId = data?.spreadsheetId || (typeof window !== 'undefined' ? localStorage.getItem('active_spreadsheet_id') : null);
+        const token = (typeof window !== 'undefined' ? localStorage.getItem('google_access_token') : null) || data?.accessToken;
+        if (sheetId) {
+          try {
+            const res = await fetch(`/api/school-data?spreadsheetId=${sheetId}&schoolKey=${data?.schoolKey || activeKey || ''}`, {
+              headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+            });
+            const json = await res.json();
+            if (res.ok && json.data?.teachers && json.data.teachers.length > 0) {
+              setTeachersList(json.data.teachers);
+              if (typeof window !== 'undefined') {
+                localStorage.setItem('school_teachers', JSON.stringify(json.data.teachers));
+              }
+            }
+          } catch (e) {}
+        }
+      }
+    });
+
+    return () => unsubscribe();
   }, []);
 
   const uniqueClasses = useMemo(() => {
-    return Array.from(new Set(opinionsList.map(o => o.className).filter(Boolean)));
+    const raw = opinionsList.map(o => o.className).filter(Boolean);
+    const map = new Map<string, string>();
+    for (const c of raw) {
+      const key = getClassBaseKey(c);
+      if (!key) continue;
+      const existing = map.get(key);
+      if (!existing || (existing.includes('(') && !c.includes('(')) || c.length < existing.length) {
+        map.set(key, c);
+      }
+    }
+    return Array.from(map.values());
   }, [opinionsList]);
 
   // Modalı açarken varsayılan sınıfı seç
@@ -134,18 +189,19 @@ export default function AdminSokPage() {
       (item.teacherName || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
       (item.opinion || '').toLowerCase().includes(searchTerm.toLowerCase());
     
-    const matchesClass = selectedClass === 'ALL' || (item.className || '').includes(selectedClass);
+    const matchesClass = selectedClass === 'ALL' || getClassBaseKey(item.className || '') === getClassBaseKey(selectedClass) || (item.className || '').includes(selectedClass);
     return matchesSearch && matchesClass;
   });
 
   // Seçilen sınıf için tutanaktaki görüşler ve öğretmenler
   const minutesClassOpinions = useMemo(() => {
-    return opinionsList.filter(o => !minutesClass || o.className === minutesClass);
+    const targetKey = getClassBaseKey(minutesClass);
+    return opinionsList.filter(o => !minutesClass || getClassBaseKey(o.className || '') === targetKey || o.className === minutesClass);
   }, [opinionsList, minutesClass]);
 
   // Öğrenci bazında grupla (tutanak tablosu için)
   const studentsWithOpinions = useMemo(() => {
-    const map = new Map<string, { studentNumber: string; studentName: string; className: string; opinions: { teacherName: string; branch: string; opinion: string }[] }>();
+    const map = new Map<string, { studentNumber: string; studentName: string; className: string; groupTrainingDays: string[]; opinions: { teacherName: string; branch: string; opinion: string }[] }>();
     
     for (const op of minutesClassOpinions) {
       const key = `${op.studentNumber}-${op.studentName}`;
@@ -154,14 +210,21 @@ export default function AdminSokPage() {
           studentNumber: op.studentNumber,
           studentName: op.studentName,
           className: op.className,
+          groupTrainingDays: [],
           opinions: []
         });
       }
-      map.get(key)!.opinions.push({
-        teacherName: op.teacherName,
-        branch: op.branch,
-        opinion: op.opinion
-      });
+      const entry = map.get(key)!;
+      if (Array.isArray(op.groupTrainingDays) && op.groupTrainingDays.length > 0) {
+        entry.groupTrainingDays = Array.from(new Set([...entry.groupTrainingDays, ...op.groupTrainingDays]));
+      }
+      if (op.opinion && op.opinion.trim()) {
+        entry.opinions.push({
+          teacherName: op.teacherName,
+          branch: op.branch,
+          opinion: op.opinion
+        });
+      }
     }
 
     return Array.from(map.values());
@@ -169,13 +232,16 @@ export default function AdminSokPage() {
 
   // O sınıfa giren öğretmenler (imza alanı için)
   const classTeachers = useMemo(() => {
+    const targetKey = getClassBaseKey(minutesClass);
     // 1. Öğretmen listesinden sorumlu olanlar
     const teachersFromList = teachersList.filter(t => 
-      Array.isArray(t.classes) && t.classes.some((c: string) => c.includes(minutesClass) || minutesClass.includes(c))
+      Array.isArray(t.classes) && t.classes.some((c: string) => {
+        const cKey = getClassBaseKey(c);
+        return (cKey && cKey === targetKey) || c.includes(minutesClass) || minutesClass.includes(c);
+      })
     );
 
     // 2. O sınıfa görüş yazmış öğretmenler
-    const opinionTeacherNames = new Set(minutesClassOpinions.map(o => o.teacherName));
     const allMatching = [...teachersFromList];
 
     for (const op of minutesClassOpinions) {
@@ -187,12 +253,18 @@ export default function AdminSokPage() {
       }
     }
 
-    // İdarecileri ve ders öğretmenlerini ayır
     return allMatching;
   }, [teachersList, minutesClass, minutesClassOpinions]);
 
-  const classCounselor = useMemo(() => {
-    return classTeachers.find(t => (t.roleOrBranch || '').includes('Sınıf Öğretmeni')) || classTeachers[0];
+  const classCounselorNames = useMemo(() => {
+    const counselors = classTeachers.filter(t => {
+      const bLower = normalizeTurkish(t.roleOrBranch || '');
+      return bLower.includes('sinif') || bLower.includes('rehber') || bLower.includes('ozel egitim') || bLower.includes('ozelegitim');
+    });
+    if (counselors.length > 0) {
+      return Array.from(new Set(counselors.map(c => c.name))).join(' / ');
+    }
+    return classTeachers[0]?.name || 'Belirtilmedi';
   }, [classTeachers]);
 
   const vicePrincipal = useMemo(() => {
@@ -422,7 +494,7 @@ export default function AdminSokPage() {
                 <div><strong>Toplantı Yeri / Şube:</strong> {minutesClass} Dersliği</div>
                 <div><strong>Toplantı Tarihi:</strong> {new Date(minutesDate).toLocaleDateString('tr-TR')}</div>
                 <div><strong>Kurul Başkanı:</strong> {vicePrincipal.name} ({vicePrincipal.roleOrBranch})</div>
-                <div><strong>Sınıf Rehber Öğretmeni:</strong> {classCounselor?.name || 'Belirtilmedi'}</div>
+                <div><strong>Sınıf Rehber Öğretmeni:</strong> {classCounselorNames}</div>
               </div>
 
               {/* Gündem Maddeleri */}
@@ -471,6 +543,12 @@ export default function AdminSokPage() {
                                 <span className="italic text-slate-700">"{op.opinion}"</span>
                               </div>
                             ))}
+                            {st.groupTrainingDays && st.groupTrainingDays.length > 0 && (
+                              <div className="text-[11px] leading-snug pt-1 border-t border-slate-200 font-sans">
+                                <span className="font-bold text-slate-900">Grup Eğitimine Hazırlık Uygulaması Günleri:</span>{" "}
+                                <span className="font-semibold text-slate-800">{st.groupTrainingDays.join(', ')}</span>
+                              </div>
+                            )}
                           </td>
                         </tr>
                       ))}

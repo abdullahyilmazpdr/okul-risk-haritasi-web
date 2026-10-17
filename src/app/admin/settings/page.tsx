@@ -17,6 +17,7 @@ import toast from 'react-hot-toast';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
 import { useSearchParams } from 'next/navigation';
 import { auth } from '@/lib/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
 import { 
   getSchoolData, 
   saveSchoolData, 
@@ -31,8 +32,8 @@ function AdminSettingsContent() {
   const isNewSchoolMode = searchParams.get('newSchool') === 'true';
 
   const [schoolKey, setSchoolKey] = useState('');
-  const [schoolName, setSchoolName] = useState('Meram Özel Eğitim Uygulama Okulu III. Kademe');
-  const [district, setDistrict] = useState('Meram / KONYA');
+  const [schoolName, setSchoolName] = useState('');
+  const [district, setDistrict] = useState('');
   const [academicYear, setAcademicYear] = useState('2025-2026');
   const [serviceAccountKey, setServiceAccountKey] = useState('');
   const [showAdvancedJson, setShowAdvancedJson] = useState(false);
@@ -52,35 +53,39 @@ function AdminSettingsContent() {
 
   useEffect(() => {
     setAcademicYear(getCurrentAcademicYear());
-    if (auth.currentUser) {
-      const activeKey = localStorage.getItem('admin_active_school_key') || '';
-      
-      if (isNewSchoolMode) {
-        setSchoolKey('');
-        setSchoolName('');
-        setSpreadsheetId('');
-        setSpreadsheetUrl('');
-        return;
-      }
-
-      getSchoolData(auth.currentUser.uid, activeKey || undefined).then((data) => {
-        if (data) {
-          if (data.schoolKey) setSchoolKey(data.schoolKey);
-          if (data.schoolName) setSchoolName(data.schoolName);
-          if (data.district) setDistrict(data.district);
-          if (data.academicYear) setAcademicYear(data.academicYear);
-          if (data.serviceAccountKey) {
-            setServiceAccountKey(
-              typeof data.serviceAccountKey === 'string' 
-                ? data.serviceAccountKey 
-                : JSON.stringify(data.serviceAccountKey, null, 2)
-            );
-          }
-          if (data.spreadsheetId) setSpreadsheetId(data.spreadsheetId);
-          if (data.spreadsheetUrl) setSpreadsheetUrl(data.spreadsheetUrl);
-        }
-      });
+    if (isNewSchoolMode) {
+      setSchoolKey('');
+      setSchoolName('');
+      setDistrict('');
+      setSpreadsheetId('');
+      setSpreadsheetUrl('');
+      return;
     }
+
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (user) {
+        const activeKey = localStorage.getItem('admin_active_school_key') || '';
+        getSchoolData(user.uid, activeKey || undefined).then((data) => {
+          if (data) {
+            if (data.schoolKey) setSchoolKey(data.schoolKey);
+            if (data.schoolName) setSchoolName(data.schoolName);
+            if (data.district) setDistrict(data.district);
+            if (data.academicYear) setAcademicYear(data.academicYear);
+            if (data.serviceAccountKey) {
+              setServiceAccountKey(
+                typeof data.serviceAccountKey === 'string' 
+                  ? data.serviceAccountKey 
+                  : JSON.stringify(data.serviceAccountKey, null, 2)
+              );
+            }
+            if (data.spreadsheetId) setSpreadsheetId(data.spreadsheetId);
+            if (data.spreadsheetUrl) setSpreadsheetUrl(data.spreadsheetUrl);
+          }
+        });
+      }
+    });
+
+    return () => unsubscribe();
   }, [isNewSchoolMode]);
 
   const handleSaveSettings = async (e: React.FormEvent) => {

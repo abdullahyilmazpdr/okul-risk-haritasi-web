@@ -85,7 +85,7 @@ function TeacherUserBadge() {
   }
 
   const isAdmin = Boolean((teacherSession as any)?.isAdmin || teacherSession?.role?.toLowerCase().includes('müdür') || teacherSession?.role?.toLowerCase().includes('idare'));
-  const isClassTeacher = Boolean((teacherSession as any)?.isClassTeacher || teacherSession?.role?.toLowerCase().includes('sınıf') || teacherSession?.role?.toLowerCase().includes('rehber'));
+  const isClassTeacher = Boolean((teacherSession as any)?.isClassTeacher || teacherSession?.role?.toLowerCase().includes('sınıf') || teacherSession?.role?.toLowerCase().includes('rehber') || teacherSession?.role?.toLowerCase().includes('özel eğitim'));
 
   return (
     <div className="flex items-center gap-3">

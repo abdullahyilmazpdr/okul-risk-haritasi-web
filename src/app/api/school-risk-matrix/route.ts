@@ -94,6 +94,11 @@ function extractRecordFromRow(r: any[]) {
   };
 }
 
+function getClassBaseKey(raw: string): string {
+  const withoutParens = (raw || '').replace(/\([^)]*\)/g, ' ');
+  return cleanTr(withoutParens).replace(/[^a-z0-9]/g, '');
+}
+
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
@@ -104,12 +109,10 @@ export async function GET(req: NextRequest) {
       ? authHeader.split('Bearer ')[1] 
       : searchParams.get('token');
 
-    if (!spreadsheetId || !token) {
-      const schoolData = await getLatestSchoolData(schoolKey || undefined);
-      if (schoolData) {
-        if (!spreadsheetId) spreadsheetId = schoolData.spreadsheetId;
-        if (!token) token = schoolData.serviceAccountKey || schoolData.accessToken;
-      }
+    const schoolData = await getLatestSchoolData(schoolKey || undefined);
+    if (schoolData) {
+      if (!spreadsheetId) spreadsheetId = schoolData.spreadsheetId;
+      if (!token) token = schoolData.serviceAccountKey || schoolData.accessToken;
     }
 
     let students: Array<{ number: string; name: string; className: string }> = [];
@@ -176,26 +179,45 @@ export async function GET(req: NextRequest) {
       }
 
       if (rec.risks && Array.isArray(rec.risks) && rec.risks.length > 0) {
-        studentRiskMap.set(rec.num, rec.risks);
+        const existing = studentRiskMap.get(rec.num) || [];
+        studentRiskMap.set(rec.num, Array.from(new Set([...existing, ...rec.risks])));
       }
     }
 
-    // 2. Sınıfları belirle ve her sınıf için 36 risk maddesini say
-    const uniqueClassNames = Array.from(new Set(students.map(s => s.className).filter(Boolean)));
-    if (uniqueClassNames.length === 0) {
-      uniqueClassNames.push(...FALLBACK_CLASSES.map(c => c.name));
+    // 2. Sınıfları tekilleştirerek belirle ve her sınıf için 36 risk maddesini say
+    const rawClassNames = Array.from(new Set(students.map(s => s.className).filter(Boolean)));
+    if (rawClassNames.length === 0) {
+      rawClassNames.push(...FALLBACK_CLASSES.map(c => c.name));
     }
 
+    const classKeyMap = new Map<string, string>();
+    for (const c of rawClassNames) {
+      const key = getClassBaseKey(c);
+      if (!key) continue;
+      const existing = classKeyMap.get(key);
+      if (!existing || (existing.includes('(') && !c.includes('(')) || c.length < existing.length) {
+        classKeyMap.set(key, c);
+      }
+    }
+    const uniqueClassNames = Array.from(classKeyMap.values());
+
     const classRows = uniqueClassNames.map((className, idx) => {
-      const classStudents = students.filter(s => s.className === className);
+      const targetKey = getClassBaseKey(className);
+      const classStudents = students.filter(s => getClassBaseKey(s.className) === targetKey || s.className === className);
       const studentCount = classStudents.length;
 
-      // Sınıf rehber öğretmenini bul
-      const classTeacherObj = teachers.find(t => 
-        (t.roleOrBranch.toLowerCase().includes('sınıf') || t.roleOrBranch.toLowerCase().includes('rehber')) &&
-        t.classes.some(c => c.toLowerCase().includes(className.toLowerCase()) || className.toLowerCase().includes(c.toLowerCase()))
-      );
-      const classTeacher = classTeacherObj ? classTeacherObj.name : 'Belirlenmedi';
+      // Sınıf rehber öğretmen(ler)ini bul (Özel eğitimde bir sınıfta 2 sınıf öğretmeni olabilir)
+      const classTeacherObjs = teachers.filter(t => {
+        const bLower = cleanTr(t.roleOrBranch);
+        const isClassRole = bLower.includes('sinif') || bLower.includes('rehber') || bLower.includes('ozel egitim') || bLower.includes('ozelegitim');
+        return isClassRole && t.classes.some(c => {
+          const cKey = getClassBaseKey(c);
+          return (cKey && cKey === targetKey) || c.toLowerCase().includes(className.toLowerCase()) || className.toLowerCase().includes(c.toLowerCase());
+        });
+      });
+      const classTeacher = classTeacherObjs.length > 0
+        ? Array.from(new Set(classTeacherObjs.map(t => t.name))).join(' / ')
+        : 'Belirlenmedi';
 
       // 36 risk maddesi için öğrenci sayıları
       const risks = Array.from({ length: 36 }, (_, itemIdx) => {
@@ -228,6 +250,11 @@ export async function GET(req: NextRequest) {
       classRows,
       totals,
       opinions: opinionsList,
+      schoolInfo: {
+        schoolName: schoolData?.schoolName || '',
+        district: schoolData?.district || '',
+        academicYear: schoolData?.academicYear || ''
+      },
       stats: {
         totalStudents: students.length,
         totalTeachers: teachers.length || 14
@@ -241,13 +268,13 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    let { spreadsheetId, accessToken, classSummaries, schoolInfo } = await req.json();
+    let { spreadsheetId, accessToken, schoolKey, classSummaries, schoolInfo } = await req.json();
 
     if (!spreadsheetId || !accessToken) {
-      const schoolData = await getLatestSchoolData();
+      const schoolData = await getLatestSchoolData(schoolKey || undefined);
       if (schoolData) {
         if (!spreadsheetId) spreadsheetId = schoolData.spreadsheetId;
-        if (!accessToken) accessToken = schoolData.accessToken;
+        if (!accessToken) accessToken = schoolData.serviceAccountKey || schoolData.accessToken;
       }
     }
 
@@ -280,7 +307,7 @@ export async function POST(req: NextRequest) {
 
     // E-Tablo'da OkulRiskHaritasi sayfasını oluştur/güncelle
     await ensureSheetExists(accessToken, spreadsheetId, 'OkulRiskHaritasi', headerRow);
-    await updateSheetRange(accessToken, spreadsheetId, 'OkulRiskHaritasi!A8:AN', allSheetValues);
+    await updateSheetRange(accessToken, spreadsheetId, 'OkulRiskHaritasi!A1:AZ', allSheetValues);
 
     return NextResponse.json({
       success: true,

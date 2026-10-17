@@ -53,9 +53,9 @@ export async function ensureSheetExists(accessToken: string | object, spreadshee
 
     if (headers && headers.length > 0) {
       // Başlık satırı A1'de var mı kontrol et
-      const firstRow = await readFromSheet(accessToken, spreadsheetId, `${sheetTitle}!A1:H1`).catch(() => []);
-      if (!firstRow || firstRow.length === 0 || firstRow[0]?.[0] !== headers[0]) {
-        await updateSheetRange(accessToken, spreadsheetId, `${sheetTitle}!A1:H1`, [headers]);
+      const firstRow = await readFromSheet(accessToken, spreadsheetId, `${sheetTitle}!A1:AZ1`).catch(() => []);
+      if (!firstRow || firstRow.length === 0 || firstRow[0]?.[0] !== headers[0] || firstRow[0]?.length < headers.length) {
+        await updateSheetRange(accessToken, spreadsheetId, `${sheetTitle}!A1`, [headers]);
       }
     }
   } catch (error) {

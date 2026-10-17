@@ -78,7 +78,7 @@ export async function POST(req: NextRequest) {
           for (const tab of tabNames) {
             const oldData = await oldSheets.spreadsheets.values.get({
               spreadsheetId: oldSpreadsheetId,
-              range: `${tab}!A1:H`
+              range: `${tab}!A1:Z`
             }).catch(() => null);
 
             const rows = oldData?.data?.values;

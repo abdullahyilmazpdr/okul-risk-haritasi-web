@@ -65,7 +65,7 @@ export default function AdminDashboard() {
                 setStats({
                   totalStudents: json.data.stats?.totalStudents || 0,
                   totalTeachers: json.data.stats?.totalTeachers || 0,
-                  riskFilledRatio: 0
+                  riskFilledRatio: json.data.stats?.riskFilledRatio || 0
                 });
               }
             }

@@ -27,6 +27,10 @@ export default function AdminRiskMapPage() {
   const [totals, setTotals] = useState<number[]>([]);
   const [stats, setStats] = useState({ totalStudents: 0, totalTeachers: 0 });
   const [currentYear, setCurrentYear] = useState('2025-2026');
+  const [schoolInfo, setSchoolInfo] = useState<{ schoolName: string; district: string }>({
+    schoolName: '',
+    district: ''
+  });
 
   const fetchMatrixData = async () => {
     setIsLoading(true);
@@ -48,6 +52,12 @@ export default function AdminRiskMapPage() {
         setClassRows(data.classRows);
         setTotals(data.totals || []);
         if (data.stats) setStats(data.stats);
+        if (data.schoolInfo) {
+          setSchoolInfo({
+            schoolName: data.schoolInfo.schoolName || '',
+            district: data.schoolInfo.district || ''
+          });
+        }
       }
     } catch (err) {
       console.error('Matrix getirme hatası:', err);
@@ -71,6 +81,7 @@ export default function AdminRiskMapPage() {
   const handleSyncToSheets = async () => {
     const storedSpreadsheetId = typeof window !== 'undefined' ? localStorage.getItem('active_spreadsheet_id') : null;
     const storedToken = typeof window !== 'undefined' ? localStorage.getItem('google_access_token') : null;
+    const activeSchoolKey = typeof window !== 'undefined' ? localStorage.getItem('admin_active_school_key') : null;
 
     if (!storedSpreadsheetId || !storedToken) {
       toast.error('E-Tablo bağlantısı veya yetkilendirme bulunamadı. Lütfen sol menüden E-Tablonuzu bağlayın.');
@@ -86,6 +97,7 @@ export default function AdminRiskMapPage() {
         body: JSON.stringify({
           spreadsheetId: storedSpreadsheetId,
           accessToken: storedToken,
+          schoolKey: activeSchoolKey,
           classSummaries: classRows
         })
       });
@@ -114,10 +126,10 @@ export default function AdminRiskMapPage() {
       // Excel Sayfası Oluştur
       const wsData: any[][] = [
         [`${academicYear} EĞİTİM ÖĞRETİM YILI OKUL RİSK HARİTASI`],
-        ["OKUL ADI:", "Meram Özel Eğitim Uygulama Okulu III. Kademe"],
-        ["İLÇESİ:", "Meram / KONYA"],
-        ["TOPLAM ÖĞRENCİ SAYISI:", String(stats.totalStudents || 19)],
-        ["TOPLAM ÖĞRETMEN SAYISI:", String(stats.totalTeachers || 14)],
+        ["OKUL ADI:", schoolInfo.schoolName || "Okul Yönetimi"],
+        ["İLÇESİ:", schoolInfo.district || "-"],
+        ["TOPLAM ÖĞRENCİ SAYISI:", String(stats.totalStudents || 0)],
+        ["TOPLAM ÖĞRETMEN SAYISI:", String(stats.totalTeachers || 0)],
         [],
         ["Sıra No", "Sınıf/Şube", ...MEB_OFFICIAL_RISK_ITEMS],
       ];
