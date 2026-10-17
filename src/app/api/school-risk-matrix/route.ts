@@ -112,7 +112,7 @@ export async function GET(req: NextRequest) {
     const schoolData = await getLatestSchoolData(schoolKey || undefined);
     if (schoolData) {
       if (!spreadsheetId) spreadsheetId = schoolData.spreadsheetId;
-      if (!token) token = schoolData.serviceAccountKey || schoolData.accessToken;
+      if (!token) token = schoolData.serviceAccountKey || schoolData.accessToken || process.env.GOOGLE_SERVICE_ACCOUNT_KEY || null;
     }
 
     let students: Array<{ number: string; name: string; className: string }> = [];

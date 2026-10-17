@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
             spreadsheetId = latestSchool.spreadsheetId;
           }
           if (!accessToken) {
-            accessToken = latestSchool.serviceAccountKey || latestSchool.accessToken || '';
+            accessToken = latestSchool.serviceAccountKey || latestSchool.accessToken || process.env.GOOGLE_SERVICE_ACCOUNT_KEY || '';
           }
         }
       } catch (e) {

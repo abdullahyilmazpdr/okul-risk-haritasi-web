@@ -71,7 +71,7 @@ export async function GET(req: NextRequest) {
         spreadsheetId = latestSchool.spreadsheetId;
       }
       if (!token) {
-        token = latestSchool.serviceAccountKey || latestSchool.accessToken || '';
+        token = latestSchool.serviceAccountKey || latestSchool.accessToken || process.env.GOOGLE_SERVICE_ACCOUNT_KEY || '';
       }
     }
 

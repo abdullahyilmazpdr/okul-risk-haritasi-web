@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
         const latest = await getLatestSchoolData(cleanSchoolKey || undefined);
         if (latest) {
           if (!targetSpreadsheetId && latest.spreadsheetId) targetSpreadsheetId = latest.spreadsheetId;
-          if (!targetToken) targetToken = latest.serviceAccountKey || latest.accessToken;
+          if (!targetToken) targetToken = latest.serviceAccountKey || latest.accessToken || process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
           if (!foundSchoolName && latest.schoolName) foundSchoolName = latest.schoolName;
         }
       } catch (e) {

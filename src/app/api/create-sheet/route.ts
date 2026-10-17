@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { google } from 'googleapis';
+import { ensureServiceAccountShared } from '@/lib/sheets';
 
 export async function POST(req: NextRequest) {
   try {
@@ -41,6 +42,9 @@ export async function POST(req: NextRequest) {
 
     if (existing.data.files && existing.data.files.length > 0) {
       const existingFile = existing.data.files[0];
+      if (existingFile.id) {
+        await ensureServiceAccountShared(token, existingFile.id);
+      }
       return NextResponse.json({
         success: true,
         alreadyExisted: true,
@@ -67,6 +71,7 @@ export async function POST(req: NextRequest) {
     const fileId = spreadsheet.data.spreadsheetId;
 
     if (fileId) {
+      await ensureServiceAccountShared(token, fileId);
       // Eğer devir işleminden geliyorsa ve eski E-Tablo okunabiliyorsa verileri yeni E-Tabloya aktar
       if (oldSpreadsheetId && oldAccessToken && oldSpreadsheetId !== fileId) {
         try {

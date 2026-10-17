@@ -138,7 +138,7 @@ export async function GET(req: NextRequest) {
       const schoolData = await getLatestSchoolData(schoolKey || undefined);
       if (schoolData) {
         if (!spreadsheetId) spreadsheetId = schoolData.spreadsheetId;
-        if (!token) token = schoolData.serviceAccountKey || schoolData.accessToken;
+        if (!token) token = schoolData.serviceAccountKey || schoolData.accessToken || process.env.GOOGLE_SERVICE_ACCOUNT_KEY || null;
       }
     }
 
@@ -236,7 +236,7 @@ export async function POST(req: NextRequest) {
       const schoolData = await getLatestSchoolData(schoolKey || undefined);
       if (schoolData) {
         if (!spreadsheetId) spreadsheetId = schoolData.spreadsheetId;
-        if (!accessToken) accessToken = schoolData.serviceAccountKey || schoolData.accessToken;
+        if (!accessToken) accessToken = schoolData.serviceAccountKey || schoolData.accessToken || process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
       }
     }
 
