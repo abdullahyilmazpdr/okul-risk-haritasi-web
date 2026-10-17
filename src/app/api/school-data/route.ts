@@ -16,49 +16,31 @@ export async function GET(req: NextRequest) {
     let spreadsheetId = searchParams.get('spreadsheetId');
     const schoolKey = searchParams.get('schoolKey');
 
-    // Eğer token veya spreadsheetId yoksa Firestore'daki okuldan otomatik çek
-    if (!token || !spreadsheetId) {
-      try {
-        const latestSchool = await getLatestSchoolData(schoolKey || undefined);
-        if (latestSchool) {
-          if (!spreadsheetId && latestSchool.spreadsheetId) {
-            spreadsheetId = latestSchool.spreadsheetId;
-          }
-          if (!token) {
-            token = latestSchool.serviceAccountKey || latestSchool.accessToken || '';
-          }
-        }
-      } catch (dbErr) {
-        console.warn('Aktif okul verisi Firestore\'dan alınamadı:', dbErr);
-      }
-    }
-
-    if (!spreadsheetId || !token) {
-      return NextResponse.json({ error: 'E-Tablo kimliği veya yetkilendirme bulunamadı.' }, { status: 401 });
-    }
-
     const verifyOnly = searchParams.get('verifyOnly') === 'true';
 
     // 1. Aşama: Eğer sadece okul kodu doğrulaması yapılıyorsa (Öğretmen giriş ekranı 1. Adım),
-    // asla öğrenci listesi veya öğretmen listesi çekilmez/dönülmez! Sadece maskeli okul bilgisi dönülür.
+    // Okulun veritabanında var olması yeterlidir, Google OAuth tokenına ihtiyaç duyulmaz.
     if (verifyOnly) {
       let foundName = '';
+      let targetSchoolKey = schoolKey || '';
       if (schoolKey) {
         try {
           const sc = await getLatestSchoolData(schoolKey);
           if (sc) {
             foundName = sc.schoolName || '';
+            targetSchoolKey = sc.schoolKey || schoolKey;
           }
         } catch (e) {}
       }
 
-      if (!foundName && spreadsheetId && token) {
-        // Okul var mı teyit et
+      if (!foundName && spreadsheetId) {
         foundName = 'Okul Tanımlı';
       }
 
       if (!foundName) {
-        return NextResponse.json({ error: 'Belirtilen MEBBİS kurum koduna ait aktif bir okul bulunamadı.' }, { status: 404 });
+        return NextResponse.json({ 
+          error: 'Belirtilen MEBBİS kurum koduna ait aktif bir okul kaydı bulunamadı. Lütfen okul yöneticinizle iletişime geçiniz.' 
+        }, { status: 404 });
       }
 
       const maskText = (text: string) => {
@@ -80,9 +62,32 @@ export async function GET(req: NextRequest) {
         success: true,
         data: {
           schoolName: maskText(foundName),
-          maskedSchoolKey: maskCode(schoolKey || '')
+          maskedSchoolKey: maskCode(targetSchoolKey)
         }
       });
+    }
+
+    // 2. Aşama: Eğer token veya spreadsheetId yoksa Firestore'daki okuldan otomatik çek
+    if (!token || !spreadsheetId) {
+      try {
+        const latestSchool = await getLatestSchoolData(schoolKey || undefined);
+        if (latestSchool) {
+          if (!spreadsheetId && latestSchool.spreadsheetId) {
+            spreadsheetId = latestSchool.spreadsheetId;
+          }
+          if (!token) {
+            token = latestSchool.serviceAccountKey || latestSchool.accessToken || '';
+          }
+        }
+      } catch (dbErr) {
+        console.warn('Aktif okul verisi Firestore\'dan alınamadı:', dbErr);
+      }
+    }
+
+    if (!spreadsheetId || !token) {
+      return NextResponse.json({ 
+        error: 'Okulun Google E-Tablo kimliği veya yönetici yetkilendirmesi bulunamadı. Lütfen okul yöneticinizin sisteme Yönetici Girişi yapmasını sağlayınız.' 
+      }, { status: 401 });
     }
 
     // E-Tablo'dan Öğrenciler ve Öğretmenler sayfalarını oku

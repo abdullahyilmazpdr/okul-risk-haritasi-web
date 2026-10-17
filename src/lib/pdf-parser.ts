@@ -78,112 +78,160 @@ export interface StudentListParseResult {
 }
 
 export async function parseStudentList(buffer: Buffer): Promise<StudentListParseResult> {
-  const { text } = await extractText(new Uint8Array(buffer), { mergePages: true });
-  const lines = (text || '').split('\n').map(line => line.trim()).filter(Boolean);
+  const { text } = await extractText(new Uint8Array(buffer), { mergePages: false });
+  const pages: string[] = Array.isArray(text) ? text : [text || ''];
   
   const students: Student[] = [];
-  let className = "Bilinmeyen Sınıf";
-  let classTeacherName = "";
-  let vicePrincipalName = "";
+  const teachersMap = new Map<string, Teacher>();
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    
-    // 1. Sınıf adını başlıktan bul
-    if (line.includes('Şubesi') && line.includes('Sınıf Listesi')) {
-      className = line.replace(/Sınıf Listesi.*$/i, '').trim();
-    } else if (line.includes('Sınıf') && line.includes('Şubesi') && !line.includes('Öğretmeni')) {
-      className = line.trim();
-    }
+  for (const pageText of pages) {
+    const lines = pageText.split('\n').map(l => l.trim()).filter(Boolean);
+    let pageClassName = "Bilinmeyen Sınıf";
+    let pageClassTeacher = "";
+    let pageVicePrincipal = "";
 
-    // 2. Sınıf Öğretmenini bul (Örn: "Sınıf Öğretmeni: İ*** Ö***")
-    if (line.includes('Sınıf Öğretmeni:')) {
-      const match = line.match(/Sınıf Öğretmeni:\s*(.+)$/i);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // 1. Sınıf adını başlıktan bul (Örn: "ÖEİU - 9. Sınıf Orta-Ağır Zihinsel / A Şubesi (ORTA AĞIR ZİHİNSEL ENGELLİLER) Sınıf Listesi")
+      if (line.includes('Şubesi') && (line.includes('Sınıf Listesi') || line.includes('Sınıf'))) {
+        pageClassName = line.replace(/Sınıf Listesi.*$/i, '').trim();
+      } else if (line.includes('Sınıf') && line.includes('Şubesi') && !line.includes('Öğretmeni')) {
+        pageClassName = line.trim();
+      }
+
+      // 2. Sınıf Öğretmenini bul (Örn: "Sınıf Öğretmeni: İ*** Ö***" veya "Sınıf Öğretmeni : İ*** Ö***")
+      if (/Sınıf\s+Öğretmeni\s*:/i.test(line)) {
+        const m = line.match(/Sınıf\s+Öğretmeni\s*:\s*([^:]+?)(?:\s+Sınıf\s+Müdür|\s+Müdür|$)/i);
+        if (m && m[1].trim()) {
+          pageClassTeacher = m[1].trim();
+        } else {
+          const directMatch = line.match(/Sınıf\s+Öğretmeni\s*:\s*(.+)$/i);
+          if (directMatch) pageClassTeacher = directMatch[1].trim();
+        }
+      }
+
+      // 3. Sınıf Müdür Yardımcısını bul (Örn: "Sınıf Müdür Yrd: İ*** A*** Sınıf Başkan Yrd:")
+      if (/Sınıf\s+Müdür\s+Yrd\s*:/i.test(line)) {
+        const m = line.match(/Sınıf\s+Müdür\s+Yrd\s*:\s*(.+?)(?:\s+Sınıf\s+Başkan|\s+Başkan|$)/i);
+        if (m && m[1].trim()) {
+          pageVicePrincipal = m[1].trim();
+        }
+      }
+
+      // 4. Öğrenci satırlarını eşleştir (1  123  Ad Soyad  Erkek/Kız)
+      let match = line.match(/^\d+\s+(\d+)\s+(.+?)\s+(Erkek|Kız)/i);
       if (match) {
-        classTeacherName = match[1].trim();
+        students.push({
+          number: match[1],
+          name: match[2].trim(),
+          gender: match[3],
+          className: pageClassName
+        });
+        continue;
+      }
+
+      // Alternatif E-Okul tablo düzeni (123  Ad  Erkek/Kız  Soyad  ...)
+      match = line.match(/^(\d+)\s+(.+?)\s+(Erkek|Kız)(.+?)(\d+)$/i);
+      if (match) {
+        students.push({
+          number: match[1],
+          name: `${match[2].trim()} ${match[4].trim()}`,
+          gender: match[3],
+          className: pageClassName
+        });
       }
     }
 
-    // 3. Sınıf Müdür Yardımcısını bul (Örn: "Sınıf Müdür Yrd: İ*** A*** Sınıf Başkan Yrd:")
-    if (line.includes('Sınıf Müdür Yrd:')) {
-      const match = line.match(/Sınıf Müdür Yrd:\s*(.+?)(?:\s+Sınıf Başkan Yrd:|$)/i);
-      if (match) {
-        vicePrincipalName = match[1].trim();
+    // Bu sayfada tespit edilen Sınıf Öğretmenini kaydet
+    if (pageClassTeacher && !pageClassTeacher.toLowerCase().includes('bulunamadı')) {
+      if (teachersMap.has(pageClassTeacher)) {
+        const existing = teachersMap.get(pageClassTeacher)!;
+        existing.classes = Array.from(new Set([...existing.classes, pageClassName]));
+      } else {
+        teachersMap.set(pageClassTeacher, createTeacherCredentials(pageClassTeacher, 'Sınıf Öğretmeni', 'Sınıf Rehberliği', [pageClassName]));
       }
     }
-    
-    // 4. Öğrenci satırlarını eşleştir
-    let match = line.match(/^\d+\s+(\d+)\s+(.+?)\s+(Erkek|Kız)/i);
-    if (match) {
-      students.push({
-        number: match[1],
-        name: match[2].trim(),
-        gender: match[3],
-        className
-      });
-      continue;
-    }
 
-    match = line.match(/^(\d+)\s+(.+?)\s+(Erkek|Kız)(.+?)(\d+)$/i);
-    if (match) {
-      students.push({
-        number: match[1],
-        name: `${match[2].trim()} ${match[4].trim()}`,
-        gender: match[3],
-        className
-      });
+    // Bu sayfada tespit edilen Müdür Yardımcısını kaydet
+    if (pageVicePrincipal && !pageVicePrincipal.toLowerCase().includes('bulunamadı')) {
+      if (teachersMap.has(pageVicePrincipal)) {
+        const existing = teachersMap.get(pageVicePrincipal)!;
+        existing.classes = Array.from(new Set([...existing.classes, pageClassName]));
+      } else {
+        teachersMap.set(pageVicePrincipal, createTeacherCredentials(pageVicePrincipal, 'Müdür Yardımcısı', 'İdare', [pageClassName]));
+      }
     }
   }
 
-  // Ayıklanan Sınıf Öğretmeni ve Müdür Yardımcısını öğretmen listesine hazırla
-  const teachers: Teacher[] = [];
-  if (classTeacherName && !classTeacherName.toLowerCase().includes('bulunamadı')) {
-    teachers.push(createTeacherCredentials(classTeacherName, 'Sınıf Öğretmeni', 'Sınıf Rehberliği', [className]));
-  }
-  if (vicePrincipalName && !vicePrincipalName.toLowerCase().includes('bulunamadı')) {
-    teachers.push(createTeacherCredentials(vicePrincipalName, 'Müdür Yardımcısı', 'İdare', [className]));
-  }
-  
   return {
     students,
-    teachers
+    teachers: Array.from(teachersMap.values())
   };
 }
 
 export async function parseTeacherSchedule(buffer: Buffer): Promise<Teacher[]> {
-  const { text } = await extractText(new Uint8Array(buffer), { mergePages: true });
-  const lines = (text || '').split('\n').map(line => line.trim()).filter(Boolean);
-  
-  let teacherName = "";
-  let branch = "";
-  const classes = new Set<string>();
+  const { text } = await extractText(new Uint8Array(buffer), { mergePages: false });
+  const pages: string[] = Array.isArray(text) ? text : [text || ''];
+  const teachersMap = new Map<string, Teacher>();
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    
-    if (line.includes('Öğretmen Adı Soyadı:')) {
-      const nameMatch = line.match(/Adı Soyadı:\s*(.*?)(?:\s*\d{4}-\d{4}|\s*Branşı:)/i);
-      const branchMatch = line.match(/Branşı:\s*(.*)$/i);
-      
-      if (nameMatch) teacherName = nameMatch[1].trim();
-      if (branchMatch) branch = branchMatch[1].trim();
-    }
+  for (const pageText of pages) {
+    const lines = pageText.split('\n').map(l => l.trim()).filter(Boolean);
+    let teacherName = "";
+    let branch = "";
+    const classes = new Set<string>();
 
-    if (line.includes('Şubesi')) {
-      let cleanClass = line.replace(/\s+/g, ' ').trim();
-      if (i > 0 && lines[i-1].includes('Sınıf') && !lines[i-1].includes('Şubesi')) {
-         const parts = lines[i-1].split('<->');
-         if(parts.length > 1) {
-            cleanClass = parts[1].trim() + " " + cleanClass;
-         }
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+
+      // Öğretmen Adı ve Branşını yakalama (Çoklu format desteği)
+      if (line.includes('Öğretmen Adı Soyadı:') || /Öğretmen\s*Adı\s*Soyadı\s*:/i.test(line)) {
+        // Format 1: "Öğretmen Adı Soyadı: E*** K***2026-2027 I. Dönem Branşı: Beden Eğitimi"
+        const nameMatch = line.match(/Adı\s*Soyadı\s*:\s*(.*?)(?:\s*\d{4}-\d{4}|\s*Branşı\s*:|$)/i);
+        const branchMatch = line.match(/Branşı\s*:\s*(.*)$/i);
+
+        if (nameMatch && nameMatch[1].trim()) teacherName = nameMatch[1].trim();
+        if (branchMatch && branchMatch[1].trim()) branch = branchMatch[1].trim();
+      } else if (/Adı\s*Soyadı\s*:/i.test(line) && !teacherName) {
+        const m = line.match(/Adı\s*Soyadı\s*:\s*([^:]+?)(?:\s*Branşı|$)/i);
+        if (m && m[1].trim()) teacherName = m[1].trim();
       }
-      classes.add(cleanClass);
+
+      if (/Branşı\s*:/i.test(line) && !branch) {
+        const bm = line.match(/Branşı\s*:\s*(.+)$/i);
+        if (bm && bm[1].trim()) branch = bm[1].trim();
+      }
+
+      // Sınıf / Şube satırlarını yakalama
+      if (line.includes('Şubesi')) {
+        let cleanClass = line.replace(/\s+/g, ' ').trim();
+        // Eğer bir önceki satırda "BEDEN EĞİTİMİ <-> ÖEİU - 12. Sınıf" gibi ders ve sınıf kökü varsa
+        if (i > 0) {
+          const prev = lines[i - 1];
+          if (prev.includes('<->')) {
+            const parts = prev.split('<->');
+            if (parts.length > 1) {
+              const prefix = parts[1].trim();
+              cleanClass = `${prefix} ${cleanClass}`.replace(/\s+/g, ' ').trim();
+            }
+          } else if (prev.includes('Sınıf') && !prev.includes('Şubesi')) {
+            cleanClass = `${prev.trim()} ${cleanClass}`.replace(/\s+/g, ' ').trim();
+          }
+        }
+        classes.add(cleanClass);
+      }
+    }
+
+    if (teacherName) {
+      if (teachersMap.has(teacherName)) {
+        const existing = teachersMap.get(teacherName)!;
+        existing.classes = Array.from(new Set([...existing.classes, ...Array.from(classes)]));
+        if (branch && !existing.branch) existing.branch = branch;
+      } else {
+        teachersMap.set(teacherName, createTeacherCredentials(teacherName, 'Ders Öğretmeni', branch, Array.from(classes)));
+      }
     }
   }
 
-  if (!teacherName) {
-    return [];
-  }
-
-  return [createTeacherCredentials(teacherName, 'Ders Öğretmeni', branch, Array.from(classes))];
+  return Array.from(teachersMap.values());
 }
