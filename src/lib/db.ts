@@ -1,6 +1,40 @@
 import { db } from './firebase';
 import { doc, setDoc, getDoc, collection, getDocs, query, limit, deleteDoc, deleteField } from 'firebase/firestore';
 
+// 10 dakikalık bellek içi önbellek (In-Memory Cache) — Firestore okuma kotasını %95+ oranında korur
+const SCHOOL_CACHE_TTL_MS = 10 * 60 * 1000; // 10 dakika
+const schoolDataCache = new Map<string, { data: any; expiresAt: number }>();
+
+function getCachedSchool(key: string): any | null {
+  const entry = schoolDataCache.get(key);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    schoolDataCache.delete(key);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCachedSchool(key: string, data: any) {
+  if (!data) return;
+  // Bellek şişmesini önlemek için maksimum 5.000 okul önbellekte tutulur
+  if (schoolDataCache.size > 5000) {
+    const firstKey = schoolDataCache.keys().next().value;
+    if (firstKey) schoolDataCache.delete(firstKey);
+  }
+  schoolDataCache.set(key, {
+    data,
+    expiresAt: Date.now() + SCHOOL_CACHE_TTL_MS
+  });
+}
+
+export function invalidateSchoolCache(schoolKey?: string) {
+  if (schoolKey) {
+    schoolDataCache.delete(String(schoolKey).trim());
+  }
+  schoolDataCache.delete('__DEFAULT__');
+}
+
 export const saveSchoolData = async (
   adminUid: string, 
   data: { 
@@ -50,6 +84,10 @@ export const saveSchoolData = async (
     ];
 
     await Promise.all(updates);
+
+    // Önbelleği anında temizle ki yeni ayarlar beklemeden devreye girsin
+    invalidateSchoolCache(cleanKey);
+
     return true;
   } catch (error) {
     console.error("Error saving school data:", error);
@@ -83,13 +121,26 @@ export const getSchoolData = async (adminUid: string, schoolKey?: string) => {
   try {
     if (schoolKey) {
       const cleanKey = String(schoolKey).trim();
+      const cached = getCachedSchool(cleanKey);
+      if (cached && (!cached.adminUid || cached.adminUid === adminUid)) {
+        return cached;
+      }
+
       const userSchoolRef = doc(db, 'users', adminUid, 'schools', cleanKey);
       const userSchoolSnap = await getDoc(userSchoolRef);
-      if (userSchoolSnap.exists()) return userSchoolSnap.data();
+      if (userSchoolSnap.exists()) {
+        const data = userSchoolSnap.data();
+        setCachedSchool(cleanKey, data);
+        return data;
+      }
 
       const docRef = doc(db, 'schools_by_key', cleanKey);
       const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) return docSnap.data();
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setCachedSchool(cleanKey, data);
+        return data;
+      }
       return null;
     }
     const docRef = doc(db, 'schools', adminUid);
@@ -107,10 +158,17 @@ export const getSchoolData = async (adminUid: string, schoolKey?: string) => {
 export const getSchoolByKey = async (schoolKey: string) => {
   try {
     const cleanKey = String(schoolKey).trim();
+    if (!cleanKey) return null;
+
+    const cached = getCachedSchool(cleanKey);
+    if (cached) return cached;
+
     const docRef = doc(db, 'schools_by_key', cleanKey);
     const docSnap = await getDoc(docRef);
     if (docSnap.exists()) {
-      return docSnap.data();
+      const data = docSnap.data();
+      setCachedSchool(cleanKey, data);
+      return data;
     }
     return null;
   } catch (error) {
@@ -125,17 +183,26 @@ export const getLatestSchoolData = async (schoolKey?: string) => {
       const byKey = await getSchoolByKey(schoolKey);
       if (byKey) return byKey;
     }
+
+    const cachedDefault = getCachedSchool('__DEFAULT__');
+    if (cachedDefault) return cachedDefault;
+
     // 1. Sabit aktif okul kaydına bak
     const activeDoc = await getDoc(doc(db, 'schools', 'active_school'));
     if (activeDoc.exists() && activeDoc.data()?.spreadsheetId) {
-      return activeDoc.data();
+      const data = activeDoc.data();
+      setCachedSchool('__DEFAULT__', data);
+      return data;
     }
     // 2. Yoksa schools koleksiyonundaki herhangi bir kayda bak
     const q = query(collection(db, 'schools'), limit(5));
     const snap = await getDocs(q);
     for (const d of snap.docs) {
       const data = d.data();
-      if (data && data.spreadsheetId) return data;
+      if (data && data.spreadsheetId) {
+        setCachedSchool('__DEFAULT__', data);
+        return data;
+      }
     }
     return null;
   } catch (error) {
@@ -298,8 +365,9 @@ export const verifyAndExecuteTransfer = async (
       });
     }
 
-    // Kullanılan transfer talebini sil
+    // Kullanılan transfer talebini sil ve önbelleği temizle
     await deleteDoc(transferRef);
+    invalidateSchoolCache(cleanKey);
 
     return { 
       success: true, 
