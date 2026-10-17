@@ -218,9 +218,43 @@ function AdminSettingsContent() {
 
       if (result.success) {
         localStorage.setItem('admin_active_school_key', transferSchoolKey);
+
+        // Yeni yöneticinin kendi Google Drive hesabında E-Tablo bağlantısını otomatik oluştur / bağla
+        if (currentToken) {
+          try {
+            const createRes = await fetch('/api/create-sheet', {
+              method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${currentToken}`,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({
+                schoolKey: transferSchoolKey,
+                schoolName: result.schoolName || transferSchoolName,
+                oldSpreadsheetId: result.oldSpreadsheetId || '',
+                oldAccessToken: result.oldAccessToken || ''
+              })
+            });
+            const createData = await createRes.json();
+            if (createRes.ok && createData.spreadsheetId) {
+              localStorage.setItem('active_spreadsheet_id', createData.spreadsheetId);
+              await saveSchoolData(auth.currentUser.uid, {
+                schoolKey: transferSchoolKey,
+                schoolName: result.schoolName || transferSchoolName,
+                spreadsheetId: createData.spreadsheetId,
+                spreadsheetUrl: createData.spreadsheetUrl,
+                adminEmail: auth.currentUser.email || undefined,
+                accessToken: currentToken
+              });
+            }
+          } catch (sheetErr) {
+            console.warn('Devir sonrası yeni E-Tablo oluşturulurken uyarı:', sheetErr);
+          }
+        }
+
         setShowTransferModal(false);
         toast.success(
-          `Yetkiler başarıyla devralındı! ${transferSchoolName} yönetim panelinize bağlandı. Sayfa güncelleniyor...`,
+          `Yetkiler başarıyla devralındı! ${transferSchoolName} yönetim panelinize ve E-Tablonuza bağlandı.`,
           { duration: 5000 }
         );
         setTimeout(() => {

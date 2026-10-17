@@ -23,6 +23,8 @@ export async function POST(req: NextRequest) {
 
     const schoolName = body?.schoolName?.trim() || '';
     const schoolKey = body?.schoolKey?.trim() || '';
+    const oldSpreadsheetId = body?.oldSpreadsheetId?.trim() || '';
+    const oldAccessToken = body?.oldAccessToken?.trim() || '';
 
     // Her okul için Drive'da benzersiz dosya adı oluştur
     // Örn: "Okul Risk Haritası - Meram Özel Eğitim III. Kademe (765432) - 2026"
@@ -65,6 +67,35 @@ export async function POST(req: NextRequest) {
     const fileId = spreadsheet.data.spreadsheetId;
 
     if (fileId) {
+      // Eğer devir işleminden geliyorsa ve eski E-Tablo okunabiliyorsa verileri yeni E-Tabloya aktar
+      if (oldSpreadsheetId && oldAccessToken && oldSpreadsheetId !== fileId) {
+        try {
+          const oldAuth = new google.auth.OAuth2();
+          oldAuth.setCredentials({ access_token: oldAccessToken });
+          const oldSheets = google.sheets({ version: 'v4', auth: oldAuth });
+
+          const tabNames = ['Öğrenciler', 'Öğretmenler', 'OkulRisk'];
+          for (const tab of tabNames) {
+            const oldData = await oldSheets.spreadsheets.values.get({
+              spreadsheetId: oldSpreadsheetId,
+              range: `${tab}!A1:H`
+            }).catch(() => null);
+
+            const rows = oldData?.data?.values;
+            if (rows && rows.length > 0) {
+              await sheets.spreadsheets.values.update({
+                spreadsheetId: fileId,
+                range: `${tab}!A1`,
+                valueInputOption: 'USER_ENTERED',
+                requestBody: { values: rows }
+              }).catch(() => {});
+            }
+          }
+        } catch (migrateErr) {
+          console.warn('Eski E-Tablodan veri aktarımı yapılamadı (yeni boş E-Tablo kullanılacak):', migrateErr);
+        }
+      }
+
       return NextResponse.json({
         success: true,
         alreadyExisted: false,

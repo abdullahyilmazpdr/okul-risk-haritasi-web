@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { readFromSheet } from '@/lib/sheets';
 import { getLatestSchoolData } from '@/lib/db';
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit';
+import { buildWhatsAppLink, generateUsername, generatePassword } from '@/lib/pdf-parser';
 
 export async function GET(req: NextRequest) {
   try {
@@ -17,21 +18,18 @@ export async function GET(req: NextRequest) {
     const schoolKey = searchParams.get('schoolKey');
 
     const verifyOnly = searchParams.get('verifyOnly') === 'true';
+    const includePasswords = searchParams.get('includePasswords') === 'true';
+
+    let latestSchool: any = null;
+    try {
+      latestSchool = await getLatestSchoolData(schoolKey || undefined);
+    } catch (e) {}
 
     // 1. Aşama: Eğer sadece okul kodu doğrulaması yapılıyorsa (Öğretmen giriş ekranı 1. Adım),
     // Okulun veritabanında var olması yeterlidir, Google OAuth tokenına ihtiyaç duyulmaz.
     if (verifyOnly) {
-      let foundName = '';
-      let targetSchoolKey = schoolKey || '';
-      if (schoolKey) {
-        try {
-          const sc = await getLatestSchoolData(schoolKey);
-          if (sc) {
-            foundName = sc.schoolName || '';
-            targetSchoolKey = sc.schoolKey || schoolKey;
-          }
-        } catch (e) {}
-      }
+      let foundName = latestSchool?.schoolName || '';
+      let targetSchoolKey = latestSchool?.schoolKey || schoolKey || '';
 
       if (!foundName && spreadsheetId) {
         foundName = 'Okul Tanımlı';
@@ -67,20 +65,13 @@ export async function GET(req: NextRequest) {
       });
     }
 
-    // 2. Aşama: Eğer token veya spreadsheetId yoksa Firestore'daki okuldan otomatik çek
-    if (!token || !spreadsheetId) {
-      try {
-        const latestSchool = await getLatestSchoolData(schoolKey || undefined);
-        if (latestSchool) {
-          if (!spreadsheetId && latestSchool.spreadsheetId) {
-            spreadsheetId = latestSchool.spreadsheetId;
-          }
-          if (!token) {
-            token = latestSchool.serviceAccountKey || latestSchool.accessToken || '';
-          }
-        }
-      } catch (dbErr) {
-        console.warn('Aktif okul verisi Firestore\'dan alınamadı:', dbErr);
+    // 2. Aşama: Eğer token veya spreadsheetId yoksa Firestore'daki okuldan sadece bağlantı bilgilerini çek
+    if (latestSchool) {
+      if (!spreadsheetId && latestSchool.spreadsheetId) {
+        spreadsheetId = latestSchool.spreadsheetId;
+      }
+      if (!token) {
+        token = latestSchool.serviceAccountKey || latestSchool.accessToken || '';
       }
     }
 
@@ -90,7 +81,7 @@ export async function GET(req: NextRequest) {
       }, { status: 401 });
     }
 
-    // E-Tablo'dan Öğrenciler ve Öğretmenler sayfalarını oku
+    // E-Tablo'dan Öğrenciler ve Öğretmenler sayfalarını doğrudan oku (Firestore'da öğrenci/öğretmen verisi tutulmaz)
     const [studentRows, teacherRows] = await Promise.all([
       readFromSheet(token, spreadsheetId, 'Öğrenciler!A2:C').catch(() => []),
       readFromSheet(token, spreadsheetId, 'Öğretmenler!A2:E').catch(() => [])
@@ -102,29 +93,64 @@ export async function GET(req: NextRequest) {
       name: row[2] || '',
     })).filter((s: any) => s.number || s.name);
 
-    // Öğretmen listesi döndürülürken şifreler ASLA istemciye verilmez!
-    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://okulrisk.vercel.app';
-    const teachers = (teacherRows || []).map((row: any[]) => {
-      const name = row[0] || '';
+    let needsSheetPasswordRepair = false;
+    const rawTeachers = (teacherRows || []).map((row: any[]) => {
+      const name = (row[0] || '').trim();
       const classes = (row[1] || '').split(',').map((c: string) => c.trim()).filter(Boolean);
-      const username = row[2] || '';
-      const roleOrBranch = row[4] || '';
+      const username = (row[2] || '').trim() || (name ? generateUsername(name) : '');
+      let password = (row[3] || '').trim();
+      if (!password && name) {
+        password = generatePassword();
+        needsSheetPasswordRepair = true;
+      }
+      const roleOrBranch = (row[4] || '').trim();
+      const whatsappLink = name && username && password
+        ? buildWhatsAppLink(name, username, password, classes, roleOrBranch)
+        : '';
 
       return {
         name,
         classes,
         username,
-        roleOrBranch
+        password,
+        roleOrBranch,
+        role: roleOrBranch,
+        whatsappLink
       };
     }).filter((t: any) => t.name);
 
-    let schoolName = '';
-    if (schoolKey) {
-      try {
-        const sc = await getLatestSchoolData(schoolKey);
-        if (sc?.schoolName) schoolName = sc.schoolName;
-      } catch (e) {}
+    // Eğer E-Tabloda D sütununda (row[3]) şifresi boş kalmış satır varsa otomatik onarıp E-Tabloya geri yaz
+    if (needsSheetPasswordRepair && spreadsheetId && token && rawTeachers.length > 0) {
+      import('@/lib/sheets').then(({ updateSheetRange }) => {
+        const repairedRows = rawTeachers.map((t: any) => [
+          t.name,
+          (t.classes || []).join(', '),
+          t.username,
+          t.password,
+          t.roleOrBranch || ''
+        ]);
+        updateSheetRange(token, spreadsheetId!, 'Öğretmenler!A2:E', repairedRows).catch(err =>
+          console.warn('Eksik öğretmen şifreleri E-Tabloya yazılırken hata:', err)
+        );
+      });
     }
+
+    // Yönetici paneli (includePasswords=true) istediğinde E-Tablodaki şifre ve WhatsApp linklerini döndür;
+    // normal öğretmen ekranlarında ise diğer öğretmenlerin şifrelerini gizle
+    const teachers = rawTeachers.map((t: any) => {
+      if (includePasswords) {
+        return t;
+      }
+      return {
+        name: t.name,
+        classes: t.classes,
+        username: t.username,
+        roleOrBranch: t.roleOrBranch,
+        role: t.role
+      };
+    });
+
+    const schoolName = latestSchool?.schoolName || '';
 
     const maskText = (text: string) => {
       if (!text) return '';
@@ -145,7 +171,7 @@ export async function GET(req: NextRequest) {
       success: true,
       data: {
         schoolName: maskText(schoolName),
-        maskedSchoolKey: maskCode(schoolKey || ''),
+        maskedSchoolKey: maskCode(schoolKey || latestSchool?.schoolKey || ''),
         students,
         teachers,
         stats: {

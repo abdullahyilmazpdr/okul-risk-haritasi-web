@@ -97,12 +97,12 @@ export async function POST(req: NextRequest) {
     let targetToken = accessToken;
     let foundSchoolName = '';
 
-    // 1. Eğer schoolKey (MEBBIS Kurum Kodu) verilmişse okulu doğrudan bul
+    // 1. Eğer schoolKey (MEBBIS Kurum Kodu) verilmişse okulun E-Tablo bağlantı bilgilerini bul
     if (cleanSchoolKey) {
       try {
         const schoolByKey = await getLatestSchoolData(cleanSchoolKey);
-        if (schoolByKey && schoolByKey.spreadsheetId) {
-          targetSpreadsheetId = schoolByKey.spreadsheetId;
+        if (schoolByKey) {
+          if (schoolByKey.spreadsheetId) targetSpreadsheetId = schoolByKey.spreadsheetId;
           targetToken = schoolByKey.serviceAccountKey || schoolByKey.accessToken || targetToken;
           foundSchoolName = schoolByKey.schoolName || '';
         }
@@ -111,12 +111,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. İstemciden gelen yerel önbellek öğretmenleri (sadece aynı okul ise faydalanabilir)
-    if (Array.isArray(cachedTeachers) && cachedTeachers.length > 0 && !cleanSchoolKey) {
+    // 2. İstemciden gelen yerel önbellek öğretmenleri (aynı cihazdan test edilirse yedek)
+    if (Array.isArray(cachedTeachers) && cachedTeachers.length > 0) {
       allTeachers = [...cachedTeachers];
     }
 
-    // 3. Eğer hala hedef tablo yoksa Firestore aktif okulundan yükle
+    // 3. Eğer hala hedef tablo yoksa Firestore aktif okulundan sadece E-Tablo bağlantı bilgisini yükle
     if (!targetSpreadsheetId || !targetToken) {
       try {
         const latest = await getLatestSchoolData(cleanSchoolKey || undefined);
@@ -130,23 +130,32 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // 4. Öğretmen kullanıcı adı ve şifrelerini doğrudan okulun Google E-Tablosundan (Öğretmenler!A2:E) oku
     if (targetSpreadsheetId && targetToken) {
       try {
         const rows = await readFromSheet(targetToken, targetSpreadsheetId, 'Öğretmenler!A2:E');
         if (rows && rows.length > 0) {
           const sheetTeachers = rows.map((row: any[]) => ({
-            name: row[0] || '',
+            name: (row[0] || '').trim(),
             classes: (row[1] || '').split(',').map((c: string) => c.trim()).filter(Boolean),
-            username: row[2] || '',
+            username: (row[2] || '').trim(),
             password: (row[3] || '').trim(),
-            roleOrBranch: row[4] || ''
+            roleOrBranch: (row[4] || '').trim()
           })).filter((t: any) => t.name || t.username);
 
-          // E-Tablodaki öğretmenleri birleştir (E-Tablo her zaman en güncel kaynaktır)
           for (const st of sheetTeachers) {
-            const idx = allTeachers.findIndex((t: any) => cleanTr(t.username) === cleanTr(st.username));
+            const idx = allTeachers.findIndex(
+              (t: any) =>
+                (t.username && st.username && cleanTr(t.username) === cleanTr(st.username)) ||
+                (t.name && st.name && cleanTr(t.name) === cleanTr(st.name))
+            );
             if (idx >= 0) {
-              allTeachers[idx] = st;
+              allTeachers[idx] = {
+                ...allTeachers[idx],
+                ...st,
+                username: st.username || allTeachers[idx].username,
+                password: st.password || allTeachers[idx].password || ''
+              };
             } else {
               allTeachers.push(st);
             }

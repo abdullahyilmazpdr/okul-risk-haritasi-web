@@ -1,5 +1,5 @@
 import { db } from './firebase';
-import { doc, setDoc, getDoc, collection, getDocs, query, limit, deleteDoc } from 'firebase/firestore';
+import { doc, setDoc, getDoc, collection, getDocs, query, limit, deleteDoc, deleteField } from 'firebase/firestore';
 
 export const saveSchoolData = async (
   adminUid: string, 
@@ -21,7 +21,10 @@ export const saveSchoolData = async (
       adminUid,
       schoolKey: cleanKey,
       spreadsheetId: data.spreadsheetId,
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
+      // Öğretmen ve öğrenci listeleri / şifreleri Firestore kotasını doldurmamak için ASLA Firestore'da tutulmaz, yalnızca E-Tabloda barınır:
+      teachers: deleteField(),
+      students: deleteField()
     };
     if (data.adminEmail) cleanData.adminEmail = data.adminEmail;
     if (data.accessToken) cleanData.accessToken = data.accessToken;
@@ -266,7 +269,9 @@ export const verifyAndExecuteTransfer = async (
       adminEmail: newAdminEmail,
       schoolKey: cleanKey,
       transferredAt: new Date().toISOString(),
-      previousAdminEmailMasked: maskEmail(oldAdminEmail)
+      previousAdminEmailMasked: maskEmail(oldAdminEmail),
+      teachers: deleteField(),
+      students: deleteField()
     };
 
     if (newAccessToken) {
@@ -299,6 +304,7 @@ export const verifyAndExecuteTransfer = async (
     return { 
       success: true, 
       oldSpreadsheetId: oldSchoolData?.spreadsheetId || '',
+      oldAccessToken: oldSchoolData?.accessToken || '',
       schoolName: oldSchoolData?.schoolName || ''
     };
   } catch (error: any) {

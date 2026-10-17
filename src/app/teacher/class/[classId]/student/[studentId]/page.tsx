@@ -46,6 +46,75 @@ function StudentDetailsContent() {
   const [groupDays, setGroupDays] = useState<string[]>([]);
   const WEEK_DAYS = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma'];
 
+  // Hazır ŞÖK Görüşü Şablonları Durumu
+  const [activeTemplateTab, setActiveTemplateTab] = useState<'positive' | 'support' | 'bep'>('positive');
+  const [showTemplates, setShowTemplates] = useState(true);
+
+  const SUBJECT_PREFIX_TAGS = [
+    '[Genel Görüş]:',
+    '[Ders İçi Katılım]:',
+    '[Uygulama / Atölye]:',
+    '[Görsel Sanatlar]:',
+    '[Müzik]:',
+    '[Beden Eğitimi]:',
+    '[Sosyal Uyum]:'
+  ];
+
+  const SOK_OPINION_TEMPLATES: Record<'positive' | 'support' | 'bep', { title: string; items: string[] }> = {
+    positive: {
+      title: 'Olumlu / Güçlü Yönler',
+      items: [
+        'Ders içi etkinliklere istekle katılır ve verilen yönergeleri takip eder.',
+        'Akranlarıyla uyumlu iletişim kurar, grup çalışmalarına olumlu katkı sağlar.',
+        'Verilen görev ve sorumlulukları zamanında yerine getirmeye özen gösterir.',
+        'Uygulamalı ve görsel çalışmalarda ilgi ve motivasyonu yüksektir.',
+        'Sınıf içi kurallara uyar, öğretmenleriyle iş birliğine açıktır.'
+      ]
+    },
+    support: {
+      title: 'Desteklenecek Alanlar',
+      items: [
+        'Dikkat süresinin artırılması için kısa, net ve somut yönergelerle desteklenmelidir.',
+        'Akademik ve uygulama becerilerinin pekiştirilmesi için bireysel tekrar çalışmaları yapılmalıdır.',
+        'Sosyal uyum ve özgüven gelişimi için sınıf içi sorumluluklar verilerek teşvik edilmelidir.',
+        'İnce motor ve el-göz koordinasyonu gerektiren etkinliklerde adım adım rehberlik sunulmalıdır.',
+        'Duygusal öz düzenleme ve akran iletişimi konusunda rehberlik desteği sürdürülmelidir.'
+      ]
+    },
+    bep: {
+      title: 'BEP & Kurul Önerileri',
+      items: [
+        'BEP hedefleri doğrultusunda görsel ve somut materyallerle bireyselleştirilmiş öğretim sürdürülmesi uygundur.',
+        'Devam-devamsızlık takibinin düzenli yapılması ve aile-okul iş birliğinin güçlendirilmesi önerilir.',
+        'Mevcut eğitim-öğretim ortamında akranlarıyla birlikte desteklenerek devam etmesi uygundur.'
+      ]
+    }
+  };
+
+  const handleInsertSubjectTag = (tag: string) => {
+    setSokOpinion(prev => {
+      const trimmed = prev.trim();
+      if (!trimmed) return `${tag} `;
+      return `${trimmed}\n${tag} `;
+    });
+  };
+
+  const handleToggleTemplateSentence = (sentence: string) => {
+    setSokOpinion(prev => {
+      if (prev.includes(sentence)) {
+        // Zaten ekliyse çıkar
+        return prev
+          .replace(sentence, '')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
+      }
+      const trimmed = prev.trim();
+      if (!trimmed) return sentence;
+      const needsSpace = !trimmed.endsWith('\n') && !trimmed.endsWith(' ');
+      return `${trimmed}${needsSpace ? ' ' : ''}${sentence}`;
+    });
+  };
+
   // Oturum ve öğrenci verilerini yükleme
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -459,35 +528,124 @@ function StudentDetailsContent() {
           {/* ŞÖK Görüşü Kutusu */}
           <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 flex flex-col justify-between">
             <div>
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
-                  <MessageSquarePlus className="w-5 h-5" />
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
+                    <MessageSquarePlus className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h2 className="text-lg font-bold text-slate-900">
+                      {isSubjectTeacher ? 'Ders Öğretmeni ŞÖK Görüşü' : 'Kişisel ŞÖK Görüşünüz'}
+                    </h2>
+                    <p className="text-xs text-slate-400">
+                      {isSubjectTeacher 
+                        ? 'İsterseniz şablondan seçebilir, ders başlığı ekleyebilir veya serbestçe yazabilirsiniz.'
+                        : 'Öğrencinin genel durumu ve kurul kararları hakkındaki görüşünüz.'
+                      }
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-lg font-bold text-slate-900">
-                    {isSubjectTeacher ? 'Ders Öğretmeni ŞÖK Görüşü' : 'Kişisel ŞÖK Görüşünüz'}
-                  </h2>
-                  <p className="text-xs text-slate-400">
-                    {isSubjectTeacher 
-                      ? 'Bu alana kendi dersinizle ilgili değerlendirmenizi yazınız.'
-                      : 'Öğrencinin genel durumu ve kurul kararları hakkındaki görüşünüz.'
-                    }
-                  </p>
+                <button
+                  type="button"
+                  onClick={() => setShowTemplates(prev => !prev)}
+                  className="text-xs font-semibold px-3 py-1.5 rounded-xl border border-indigo-200 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 transition-colors flex items-center gap-1.5 shrink-0"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  {showTemplates ? 'Şablonları Gizle' : 'Hazır Şablonlar'}
+                </button>
+              </div>
+
+              {/* Şablondan Hazır Görüş Seçme ve Ders Başlığı Ekleme Paneli */}
+              {showTemplates && (
+                <div className="mb-4 bg-slate-50/90 border border-slate-200 rounded-2xl p-3.5 space-y-3">
+                  {/* 1. Ders / Alan Başlığı Etiketleri (Birden fazla derse giren öğretmenler için) */}
+                  <div>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-[11px] font-bold text-slate-600">
+                        Ders / Alan Başlığı Ekle (Çoklu derse girenler için isteğe bağlı):
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {teacher?.role && teacher.role !== 'Ders Öğretmeni' && teacher.role !== 'Sınıf Öğretmeni' && (
+                        <button
+                          type="button"
+                          onClick={() => handleInsertSubjectTag(`[${teacher.role}]:`)}
+                          className="text-[11px] font-semibold px-2.5 py-1 rounded-lg bg-indigo-100 text-indigo-800 hover:bg-indigo-200 transition-colors"
+                        >
+                          + [{teacher.role}]
+                        </button>
+                      )}
+                      {SUBJECT_PREFIX_TAGS.map((tag) => (
+                        <button
+                          type="button"
+                          key={tag}
+                          onClick={() => handleInsertSubjectTag(tag)}
+                          className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-indigo-50 hover:border-indigo-200 hover:text-indigo-700 transition-colors"
+                        >
+                          + {tag.replace(':', '')}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 2. Kategorili Hazır ŞÖK Görüş Şablonları */}
+                  <div className="pt-2.5 border-t border-slate-200/80 space-y-2">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
+                        <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                        Hazır Görüş Şablonları (Tıklayarak metne ekleyin / çıkarın):
+                      </span>
+                      <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200">
+                        {(['positive', 'support', 'bep'] as const).map((tabKey) => (
+                          <button
+                            type="button"
+                            key={tabKey}
+                            onClick={() => setActiveTemplateTab(tabKey)}
+                            className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-colors ${
+                              activeTemplateTab === tabKey
+                                ? 'bg-emerald-600 text-white shadow-xs'
+                                : 'text-slate-600 hover:bg-slate-100'
+                            }`}
+                          >
+                            {SOK_OPINION_TEMPLATES[tabKey].title}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 gap-1.5">
+                      {SOK_OPINION_TEMPLATES[activeTemplateTab].items.map((sentence, idx) => {
+                        const isAdded = sokOpinion.includes(sentence);
+                        return (
+                          <button
+                            type="button"
+                            key={idx}
+                            onClick={() => handleToggleTemplateSentence(sentence)}
+                            className={`text-left text-xs p-2.5 rounded-xl border transition-all flex items-start gap-2 ${
+                              isAdded
+                                ? 'bg-emerald-50 border-emerald-400 text-emerald-950 font-medium'
+                                : 'bg-white border-slate-200 text-slate-700 hover:border-emerald-300 hover:bg-emerald-50/30'
+                            }`}
+                          >
+                            <CheckCircle2
+                              className={`w-4 h-4 shrink-0 mt-0.5 ${
+                                isAdded ? 'text-emerald-600' : 'text-slate-300'
+                              }`}
+                            />
+                            <span className="leading-snug">{sentence}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
-              </div>
-              
-              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-600 mb-4 flex items-start gap-2">
-                <Info className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
-                <span>
-                  Öğrencinin akademik performansı, derse katılımı, devam durumu ve genel davranışları hakkındaki değerlendirmenizi yazınız.
-                </span>
-              </div>
+              )}
               
               <textarea
                 value={sokOpinion}
                 onChange={(e) => setSokOpinion(e.target.value)}
-                placeholder="Örn: Derse düzenli katılım göstermektedir. Bireysel etkinliklerde istekli, ancak grup çalışmalarında yönlendirmeye ihtiyaç duyuyor..."
-                className="w-full min-h-[220px] p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm text-slate-800 leading-relaxed placeholder:text-slate-400"
+                placeholder="Yukarıdaki hazır şablonlara tıklayarak hızlıca görüş oluşturabilir veya kendi değerlendirmenizi buraya yazabilirsiniz..."
+                className="w-full min-h-[200px] p-4 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none text-sm text-slate-800 leading-relaxed placeholder:text-slate-400"
               />
             </div>
 
@@ -496,7 +654,18 @@ function StudentDetailsContent() {
                 <Edit3 className="w-3.5 h-3.5 text-indigo-600" />
                 {teacher?.name || teacher?.username || 'Öğretmen'}
               </span>
-              <span>{sokOpinion.length} Karakter</span>
+              <div className="flex items-center gap-3">
+                {sokOpinion.trim().length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSokOpinion('')}
+                    className="text-red-500 hover:text-red-700 font-medium underline underline-offset-2"
+                  >
+                    Metni Temizle
+                  </button>
+                )}
+                <span>{sokOpinion.length} Karakter</span>
+              </div>
             </div>
           </div>
 
