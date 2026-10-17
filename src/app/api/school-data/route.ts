@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { readFromSheet } from '@/lib/sheets';
 import { getLatestSchoolData } from '@/lib/db';
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit';
-import { buildWhatsAppLink, generateUsername, generatePassword } from '@/lib/pdf-parser';
+import { buildWhatsAppLink, generateUsername, generatePassword, deduplicateClasses } from '@/lib/pdf-parser';
 
 export async function GET(req: NextRequest) {
   try {
@@ -96,7 +96,7 @@ export async function GET(req: NextRequest) {
     let needsSheetPasswordRepair = false;
     const rawTeachers = (teacherRows || []).map((row: any[]) => {
       const name = (row[0] || '').trim();
-      const classes = (row[1] || '').split(',').map((c: string) => c.trim()).filter(Boolean);
+      const classes = deduplicateClasses((row[1] || '').split(',').map((c: string) => c.trim()).filter(Boolean));
       const username = (row[2] || '').trim() || (name ? generateUsername(name) : '');
       let password = (row[3] || '').trim();
       if (!password && name) {

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFromSheet } from '@/lib/sheets';
+import { deduplicateClasses } from '@/lib/pdf-parser';
 
 // Türkçe ve özel karakterleri latin küçük harflere çevirici
 function cleanTr(str: string): string {
@@ -29,6 +30,7 @@ function determineRole(roleOrBranch: string, username: string, name?: string) {
   const r = cleanTr(roleOrBranch);
   const u = cleanTr(username);
   const n = cleanTr(name || '');
+  const rAlpha = r.replace(/[^a-z0-9]/g, '');
   const uAlpha = u.replace(/[^a-z0-9]/g, '');
   const nAlpha = n.replace(/[^a-z0-9]/g, '');
 
@@ -44,10 +46,12 @@ function determineRole(roleOrBranch: string, username: string, name?: string) {
     nAlpha.startsWith('ia') ||
     (nAlpha.length >= 2 && nAlpha[0] === 'i' && nAlpha[1] === 'a');
 
-  // 2. Sınıf Rehber Öğretmeni
+  // 2. Sınıf Rehber Öğretmeni (Özel Eğitim okullarında bir sınıftaki iki Özel Eğitim öğretmeni de Sınıf Öğretmenidir)
   const isClassTeacher = !isAdmin && (
     r.includes('sinif') || 
     r.includes('rehber') || 
+    r.includes('ozel egitim') ||
+    rAlpha.includes('ozelegitim') ||
     u.includes('sinif') || 
     u.includes('rehber') || 
     uAlpha.startsWith('io') || 
@@ -137,7 +141,7 @@ export async function POST(req: NextRequest) {
         if (rows && rows.length > 0) {
           const sheetTeachers = rows.map((row: any[]) => ({
             name: (row[0] || '').trim(),
-            classes: (row[1] || '').split(',').map((c: string) => c.trim()).filter(Boolean),
+            classes: deduplicateClasses((row[1] || '').split(',').map((c: string) => c.trim()).filter(Boolean)),
             username: (row[2] || '').trim(),
             password: (row[3] || '').trim(),
             roleOrBranch: (row[4] || '').trim()
@@ -209,6 +213,10 @@ export async function POST(req: NextRequest) {
       matchedTeacher.name || ''
     );
 
+    const uniqueTeacherClasses = deduplicateClasses(
+      Array.isArray(matchedTeacher.classes) ? matchedTeacher.classes : []
+    );
+
     // KVKK Denetim İzi: Giriş etkinliğini arka planda kaydet
     if (targetSpreadsheetId && targetToken) {
       const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || req.headers.get('x-real-ip') || 'İstemci';
@@ -229,7 +237,7 @@ export async function POST(req: NextRequest) {
       isClassTeacher,
       isAdmin,
       schoolKey: cleanSchoolKey,
-      classes: Array.isArray(matchedTeacher.classes) ? matchedTeacher.classes : []
+      classes: uniqueTeacherClasses
     });
 
     return NextResponse.json({
@@ -238,9 +246,7 @@ export async function POST(req: NextRequest) {
       teacher: {
         name: matchedTeacher.name || cleanUsername,
         username: matchedTeacher.username || cleanUsername,
-        classes: Array.isArray(matchedTeacher.classes) && matchedTeacher.classes.length > 0 
-          ? matchedTeacher.classes 
-          : [],
+        classes: uniqueTeacherClasses,
         role: roleTitle,
         isClassTeacher,
         isAdmin,

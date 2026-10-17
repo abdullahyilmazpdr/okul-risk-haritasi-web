@@ -2,37 +2,67 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Users, ArrowRight, BookOpen, GraduationCap, School } from 'lucide-react';
+import { Users, ArrowRight, GraduationCap, School } from 'lucide-react';
 import { FALLBACK_CLASSES } from '@/lib/school-constants';
+
+function getClassBaseKeyClient(clsName: string): string {
+  const trMap: Record<string, string> = {
+    'ç': 'c', 'Ç': 'c', 'ğ': 'g', 'Ğ': 'g', 'ı': 'i', 'I': 'i', 'İ': 'i',
+    'ö': 'o', 'Ö': 'o', 'ş': 's', 'Ş': 's', 'ü': 'u', 'Ü': 'u'
+  };
+  return (clsName || '')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/^ÖE[İI]U\s*-\s*/i, '')
+    .replace(/Sınıf\s*Listesi.*$/i, '')
+    .split('')
+    .map(ch => trMap[ch] || ch)
+    .join('')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function deduplicateClassesClient(classList: string[]): string[] {
+  const map = new Map<string, string>();
+  for (const raw of classList || []) {
+    const trimmed = (raw || '').trim();
+    if (!trimmed) continue;
+    const key = getClassBaseKeyClient(trimmed);
+    if (!key) continue;
+    const existing = map.get(key);
+    if (!existing || trimmed.length > existing.length) {
+      map.set(key, trimmed);
+    }
+  }
+  return Array.from(map.values());
+}
 
 export default function TeacherDashboard() {
   const [classes, setClasses] = useState<any[]>(FALLBACK_CLASSES);
   const [teacher, setTeacher] = useState<any>(null);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('teacher_session');
-      if (!stored) {
-        window.location.href = '/teacher/login';
-        return;
-      }
-      try {
-        const parsed = JSON.parse(stored);
-        setTeacher(parsed);
+    if (typeof window === 'undefined') return;
+    const stored = localStorage.getItem('teacher_session');
+    if (!stored) {
+      window.location.href = '/teacher/login';
+      return;
+    }
 
-        // Öğrenci listesinden sınıf bazlı gerçek öğrenci sayılarını hesapla
-        let allStudents: any[] = [];
-        const storedStudentsRaw = localStorage.getItem('school_students');
-        if (storedStudentsRaw) {
-          try {
-            allStudents = JSON.parse(storedStudentsRaw);
-          } catch (e) {}
+    try {
+      const parsed = JSON.parse(stored);
+      if (Array.isArray(parsed.classes)) {
+        const deduped = deduplicateClassesClient(parsed.classes);
+        if (deduped.length !== parsed.classes.length) {
+          parsed.classes = deduped;
+          localStorage.setItem('teacher_session', JSON.stringify(parsed));
         }
+      }
+      setTeacher(parsed);
 
-        // Eğer öğretmen idareci ise ve kendi sınıfları yoksa veya tüm sınıfları görmek istiyorsa
-        let targetClassNames: string[] = parsed.classes || [];
+      const buildClassList = (allStudents: any[]) => {
+        let targetClassNames: string[] = deduplicateClassesClient(parsed.classes || []);
         if ((!targetClassNames.length || parsed.isAdmin) && allStudents.length > 0) {
-          const distinctClasses = Array.from(new Set(allStudents.map(s => s.className).filter(Boolean)));
+          const distinctClasses = deduplicateClassesClient(allStudents.map(s => s.className).filter(Boolean));
           if (distinctClasses.length > 0) {
             targetClassNames = distinctClasses;
           }
@@ -40,38 +70,83 @@ export default function TeacherDashboard() {
 
         if (targetClassNames.length > 0) {
           const dynamicList = targetClassNames.map((clsName: string, idx: number) => {
-            const norm = clsName.toLowerCase().replace(/[^a-z0-9]/g, '');
-            const matchingCount = allStudents.filter(s => {
+            const baseKey = getClassBaseKeyClient(clsName);
+            // Eğer öğrencilerde bu sınıfın daha tam/parantezli adı varsa onu başlık olarak göster
+            let displayName = clsName;
+            const matchingStudents = allStudents.filter(s => {
               if (!s.className) return false;
-              const sn = s.className.toLowerCase().replace(/[^a-z0-9]/g, '');
-              return sn === norm || sn.includes(norm) || norm.includes(sn);
-            }).length;
+              const sKey = getClassBaseKeyClient(s.className);
+              if (sKey === baseKey || (sKey && baseKey && (sKey.includes(baseKey) || baseKey.includes(sKey)))) {
+                if (s.className.length > displayName.length) {
+                  displayName = s.className;
+                }
+                return true;
+              }
+              return false;
+            });
 
             return {
               id: String(idx + 1),
-              name: clsName,
-              shortName: clsName.replace('ÖEİU - ', ''),
-              studentCount: matchingCount
+              name: displayName,
+              shortName: displayName.replace('ÖEİU - ', ''),
+              studentCount: matchingStudents.length
             };
           });
           setClasses(dynamicList);
         } else if (allStudents.length > 0) {
-          const distinctClasses = Array.from(new Set(allStudents.map(s => s.className).filter(Boolean)));
-          const dynamicList = distinctClasses.map((clsName: string, idx: number) => ({
-            id: String(idx + 1),
-            name: clsName,
-            shortName: clsName.replace('ÖEİU - ', ''),
-            studentCount: allStudents.filter(s => s.className === clsName).length
-          }));
+          const distinctClasses = deduplicateClassesClient(allStudents.map(s => s.className).filter(Boolean));
+          const dynamicList = distinctClasses.map((clsName: string, idx: number) => {
+            const baseKey = getClassBaseKeyClient(clsName);
+            return {
+              id: String(idx + 1),
+              name: clsName,
+              shortName: clsName.replace('ÖEİU - ', ''),
+              studentCount: allStudents.filter(s => getClassBaseKeyClient(s.className) === baseKey).length
+            };
+          });
           setClasses(dynamicList);
         }
-      } catch (e) {}
-    }
+      };
+
+      // 1. Önce yerel önbellekten hesapla
+      let localStudents: any[] = [];
+      const storedStudentsRaw = localStorage.getItem('school_students');
+      if (storedStudentsRaw) {
+        try {
+          localStudents = JSON.parse(storedStudentsRaw);
+        } catch (e) {}
+      }
+      buildClassList(localStudents);
+
+      // 2. Canlı E-Tablo verisinden öğrenci sayılarını güncelle
+      const schoolKey = parsed?.schoolKey || localStorage.getItem('last_school_key') || '';
+      const spreadsheetId = parsed?.spreadsheetId || localStorage.getItem('active_spreadsheet_id') || '';
+      const url = new URL('/api/school-data', window.location.origin);
+      if (schoolKey) url.searchParams.set('schoolKey', schoolKey);
+      if (spreadsheetId) url.searchParams.set('spreadsheetId', spreadsheetId);
+
+      fetch(url.toString())
+        .then(r => r.json())
+        .then(json => {
+          if (json?.data?.students && Array.isArray(json.data.students)) {
+            localStorage.setItem('school_students', JSON.stringify(json.data.students));
+            buildClassList(json.data.students);
+          }
+        })
+        .catch(() => {});
+    } catch (e) {}
   }, []);
 
   if (!teacher) {
     return null;
   }
+
+  const isClassTeacher = Boolean(
+    teacher?.isClassTeacher ||
+    teacher?.role?.toLowerCase().includes('sınıf') ||
+    teacher?.role?.toLowerCase().includes('rehber') ||
+    teacher?.role?.toLowerCase().includes('özel eğitim')
+  );
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
@@ -79,7 +154,7 @@ export default function TeacherDashboard() {
         <div>
           <div className="flex items-center gap-2 text-indigo-200 text-xs font-semibold uppercase tracking-wider mb-1">
             <School className="w-4 h-4" />
-            Meram Özel Eğitim Uygulama Okulu III. Kademe
+            {teacher?.schoolName || 'Okul Risk Haritası ve ŞÖK Sistemi'}
           </div>
           <h1 className="text-2xl font-bold flex flex-wrap items-center gap-2">
             <span>Hoş Geldiniz, {teacher?.name || teacher?.username || 'Değerli Öğretmenimiz'}</span>
@@ -88,12 +163,12 @@ export default function TeacherDashboard() {
                 Müdür Yardımcısı (İdareci)
               </span>
             )}
-            {teacher?.isClassTeacher && !teacher?.isAdmin && (
+            {isClassTeacher && !teacher?.isAdmin && (
               <span className="bg-emerald-400 text-emerald-950 text-xs px-2.5 py-1 rounded-full font-bold shadow-sm">
                 Sınıf Rehber Öğretmeni
               </span>
             )}
-            {!teacher?.isAdmin && !teacher?.isClassTeacher && (
+            {!teacher?.isAdmin && !isClassTeacher && (
               <span className="bg-blue-300 text-blue-950 text-xs px-2.5 py-1 rounded-full font-bold shadow-sm">
                 Ders Öğretmeni
               </span>

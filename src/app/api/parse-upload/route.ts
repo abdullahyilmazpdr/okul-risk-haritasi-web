@@ -7,7 +7,9 @@ import {
   slugifyTr,
   generateUsername,
   generatePassword,
-  buildWhatsAppLink
+  buildWhatsAppLink,
+  deduplicateClasses,
+  getClassBaseKey
 } from '@/lib/pdf-parser';
 import { updateSheetRange, readFromSheet, ensureSheetExists } from '@/lib/sheets';
 
@@ -64,7 +66,7 @@ export async function POST(req: NextRequest) {
               name: t.name.trim(),
               username: (t.username || prev?.username || '').trim(),
               password: (t.password || prev?.password || '').trim(),
-              classes: Array.isArray(t.classes) ? t.classes : (prev?.classes || []),
+              classes: deduplicateClasses(Array.isArray(t.classes) ? t.classes : (prev?.classes || [])),
               roleOrBranch: (t.roleOrBranch || t.role || t.branch || prev?.roleOrBranch || '').trim()
             });
           }
@@ -78,7 +80,7 @@ export async function POST(req: NextRequest) {
       if (!name) continue;
       const key = normalizeTeacherKey(name);
       const prev = existingCredentialsMap.get(key);
-      const classes = (row[1] || '').split(',').map((c: string) => c.trim()).filter(Boolean);
+      const classes = deduplicateClasses((row[1] || '').split(',').map((c: string) => c.trim()).filter(Boolean));
       const username = (row[2] || '').trim() || prev?.username || '';
       const password = (row[3] || '').trim() || prev?.password || '';
       const roleOrBranch = (row[4] || '').trim() || prev?.roleOrBranch || '';
@@ -105,6 +107,23 @@ export async function POST(req: NextRequest) {
     // Öğrenci listesi: Yeni yüklendiyse yenisini kullan, yüklenmediyse mevcut öğrencileri koru
     const students: Student[] = studentResult ? studentResult.students : existingStudents;
 
+    // Öğrenci listesindeki resmi sınıf adlarını referans haritasına kaydet (kısa sınıf adlarını tam sınıf adına eşlemek için)
+    const canonicalClassMap = new Map<string, string>();
+    for (const s of students) {
+      if (s.className) {
+        const bKey = getClassBaseKey(s.className);
+        if (bKey) canonicalClassMap.set(bKey, s.className.trim());
+      }
+    }
+
+    const resolveTeacherClasses = (rawClasses: string[]) => {
+      const mapped = (rawClasses || []).map(c => {
+        const bKey = getClassBaseKey(c);
+        return (bKey && canonicalClassMap.get(bKey)) || c;
+      });
+      return deduplicateClasses(mapped);
+    };
+
     // 3. Öğretmenleri birleştir
     const teacherMap = new Map<string, Teacher>();
 
@@ -120,11 +139,13 @@ export async function POST(req: NextRequest) {
       const key = normalizeTeacherKey(t.name);
       if (!key) return;
 
+      const resolvedInputClasses = resolveTeacherClasses(t.classes);
+
       if (teacherMap.has(key)) {
         const existing = teacherMap.get(key)!;
         existing.classes = replaceClasses
-          ? Array.from(new Set(t.classes))
-          : Array.from(new Set([...existing.classes, ...t.classes]));
+          ? resolvedInputClasses
+          : resolveTeacherClasses([...existing.classes, ...resolvedInputClasses]);
         if (t.role && (!existing.role || existing.role === 'Ders Öğretmeni')) {
           existing.role = t.role;
         }
@@ -142,7 +163,7 @@ export async function POST(req: NextRequest) {
         const role = t.role || '';
         const branch = t.branch || '';
         const roleLabel = role ? `${role}${branch ? ` - ${branch}` : ''}` : (branch || saved?.roleOrBranch || 'Ders Öğretmeni');
-        const classes = Array.from(new Set(t.classes));
+        const classes = resolvedInputClasses;
 
         teacherMap.set(key, {
           name: t.name.trim(),
@@ -174,7 +195,7 @@ export async function POST(req: NextRequest) {
         if (teacherMap.has(key)) {
           // Sınıf öğretmeni aynı zamanda başka sınıfların dersine giriyorsa sınıflarını ve branşını koru
           const current = teacherMap.get(key)!;
-          current.classes = Array.from(new Set([...current.classes, ...saved.classes]));
+          current.classes = resolveTeacherClasses([...current.classes, ...saved.classes]);
           if (!current.branch && saved.roleOrBranch && !saved.roleOrBranch.includes('Sınıf Öğretmeni') && !saved.roleOrBranch.includes('Müdür')) {
             current.branch = saved.roleOrBranch;
           }

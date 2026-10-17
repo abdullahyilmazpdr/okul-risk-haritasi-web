@@ -50,6 +50,40 @@ export function generateUsername(name: string): string {
   return `${baseName}${randomSuffix}`;
 }
 
+/**
+ * Sınıf adlarının (Öğrenci Listesi PDF'indeki parantezli tam ad ile Ders Programı PDF'indeki kısa adın)
+ * aynı sınıfı temsil edip etmediğini anlamak için normalize edilmiş temel anahtar üretir.
+ * Örn:
+ * - "ÖEİU - 9. Sınıf Orta-Ağır Zihinsel / A Şubesi (ORTA AĞIR ZİHİNSEL ENGELLİLER)" -> "9sinifortaagirzihinselasubesi"
+ * - "ÖEİU - 9. Sınıf Orta-Ağır Zihinsel / A Şubesi" -> "9sinifortaagirzihinselasubesi"
+ */
+export function getClassBaseKey(clsName: string): string {
+  if (!clsName) return '';
+  const withoutParens = clsName
+    .replace(/\([^)]*\)/g, '')
+    .replace(/^ÖE[İI]U\s*-\s*/i, '')
+    .replace(/Sınıf\s*Listesi.*$/i, '');
+  return slugifyTr(withoutParens);
+}
+
+/**
+ * Aynı sınıfın farklı yazımlarını (uzun parantezli ve kısa) tekilleştirir; her zaman daha açıklayıcı/uzun olan ismi korur.
+ */
+export function deduplicateClasses(classList: string[]): string[] {
+  const map = new Map<string, string>();
+  for (const raw of classList || []) {
+    const trimmed = (raw || '').trim();
+    if (!trimmed) continue;
+    const key = getClassBaseKey(trimmed);
+    if (!key) continue;
+    const existing = map.get(key);
+    if (!existing || trimmed.length > existing.length) {
+      map.set(key, trimmed);
+    }
+  }
+  return Array.from(map.values());
+}
+
 // WhatsApp paylaşım bağlantısı oluşturucu
 export function buildWhatsAppLink(
   name: string,
@@ -114,7 +148,7 @@ export async function parseStudentList(buffer: Buffer): Promise<StudentListParse
     if (teachersMap.has(mapKey)) {
       const existing = teachersMap.get(mapKey)!;
       if (clsName && clsName !== 'Bilinmeyen Sınıf') {
-        existing.classes = Array.from(new Set([...existing.classes, clsName]));
+        existing.classes = deduplicateClasses([...existing.classes, clsName]);
       }
     } else {
       teachersMap.set(
@@ -255,12 +289,25 @@ export async function parseTeacherSchedule(buffer: Buffer): Promise<Teacher[]> {
 
     if (teacherName) {
       const mapKey = slugifyTr(teacherName);
+      const normBranch = slugifyTr(branch);
+      // Özel Eğitim okullarında bir sınıfta iki Özel Eğitim sınıf öğretmeni olabildiği için,
+      // Branşı "Özel Eğitim" veya "Sınıf Öğretmenliği" olan öğretmenler de Sınıf Öğretmeni yetkisi alır:
+      const inferredRole = (normBranch.includes('ozelegitim') || normBranch.includes('sinifogretmen'))
+        ? 'Sınıf Öğretmeni'
+        : 'Ders Öğretmeni';
+
       if (teachersMap.has(mapKey)) {
         const existing = teachersMap.get(mapKey)!;
-        existing.classes = Array.from(new Set([...existing.classes, ...Array.from(classes)]));
+        existing.classes = deduplicateClasses([...existing.classes, ...Array.from(classes)]);
         if (branch && !existing.branch) existing.branch = branch;
+        if (inferredRole === 'Sınıf Öğretmeni' && existing.role === 'Ders Öğretmeni') {
+          existing.role = 'Sınıf Öğretmeni';
+        }
       } else {
-        teachersMap.set(mapKey, createTeacherCredentials(teacherName, 'Ders Öğretmeni', branch, Array.from(classes)));
+        teachersMap.set(
+          mapKey,
+          createTeacherCredentials(teacherName, inferredRole, branch, deduplicateClasses(Array.from(classes)))
+        );
       }
     }
   }

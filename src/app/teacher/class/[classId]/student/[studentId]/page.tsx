@@ -269,9 +269,14 @@ function StudentDetailsContent() {
     } catch (e) {}
   }, [student.number, router]);
 
-  // Rol ayrımı kuralları:
+  // Rol ayrımı kuralları (Özel Eğitim okullarında bir sınıftaki iki Özel Eğitim öğretmeni de Sınıf Öğretmenidir):
   const isAdmin = Boolean(teacher?.isAdmin || teacher?.role?.toLowerCase().includes('müdür') || teacher?.role?.toLowerCase().includes('idare'));
-  const isClassTeacher = Boolean(teacher?.isClassTeacher || teacher?.role?.toLowerCase().includes('sınıf') || teacher?.role?.toLowerCase().includes('rehber'));
+  const isClassTeacher = Boolean(
+    teacher?.isClassTeacher ||
+    teacher?.role?.toLowerCase().includes('sınıf') ||
+    teacher?.role?.toLowerCase().includes('rehber') ||
+    teacher?.role?.toLowerCase().includes('özel eğitim')
+  );
   const isSubjectTeacher = !isAdmin && !isClassTeacher;
 
   const toggleRisk = (index: number) => {
@@ -669,84 +674,86 @@ function StudentDetailsContent() {
             </div>
           </div>
 
-          {/* Grup Eğitimine Hazırlık Modülü (ŞÖK Görüşünün Hemen Altında) */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-start gap-3">
-                <div className={`p-2.5 rounded-xl ${isGroupTraining ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>
-                  <Calendar className="w-5 h-5" />
+          {/* Grup Eğitimine Hazırlık Modülü (Sadece Sınıf Öğretmenleri ve İdareciler İçin) */}
+          {!isSubjectTeacher && (
+            <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-6 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className={`p-2.5 rounded-xl ${isGroupTraining ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-500'}`}>
+                    <Calendar className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-bold text-slate-900">Grup Eğitimine Hazırlık</h3>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Öğrenci grup eğitimine hazırlık programına dahil edilecekse işaretleyiniz.
+                    </p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">Grup Eğitimine Hazırlık</h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Öğrenci grup eğitimine hazırlık programına dahil edilecekse işaretleyiniz.
-                  </p>
-                </div>
+                
+                {/* Ana Seçim Tik Kutusu */}
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    checked={isGroupTraining} 
+                    onChange={(e) => {
+                      const checked = e.target.checked;
+                      setIsGroupTraining(checked);
+                      if (!checked) setGroupDays([]);
+                    }}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                </label>
               </div>
-              
-              {/* Ana Seçim Tik Kutusu */}
-              <label className="relative inline-flex items-center cursor-pointer">
-                <input 
-                  type="checkbox" 
-                  checked={isGroupTraining} 
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    setIsGroupTraining(checked);
-                    if (!checked) setGroupDays([]);
-                  }}
-                  className="sr-only peer"
-                />
-                <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
-              </label>
+
+              {/* Tiklenince Açılan Gün Seçim Alanı */}
+              {isGroupTraining && (
+                <div className="pt-3 border-t border-slate-100 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-semibold text-slate-700">
+                      Öğrencinin Geleceği Günler:
+                    </span>
+                    <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-100">
+                      {groupDays.length > 0 ? `${groupDays.length} Gün Seçildi` : 'Gün Seçiniz'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                    {WEEK_DAYS.map((day) => {
+                      const isDaySelected = groupDays.includes(day);
+                      return (
+                        <button
+                          type="button"
+                          key={day}
+                          onClick={() => {
+                            if (isDaySelected) {
+                              setGroupDays(groupDays.filter(d => d !== day));
+                            } else {
+                              setGroupDays([...groupDays, day]);
+                            }
+                          }}
+                          className={`px-3 py-2.5 rounded-xl text-xs font-medium border flex items-center justify-center gap-2 transition-all ${
+                            isDaySelected
+                              ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
+                              : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <CheckCircle2 className={`w-3.5 h-3.5 ${isDaySelected ? 'text-white' : 'text-slate-300'}`} />
+                          <span>{day}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {groupDays.length > 0 && (
+                    <p className="text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                      📌 Öğrenci haftalık <strong>{groupDays.join(', ')}</strong> günlerinde grup eğitimine hazırlık için gelecektir.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
-
-            {/* Tiklenince Açılan Gün Seçim Alanı */}
-            {isGroupTraining && (
-              <div className="pt-3 border-t border-slate-100 space-y-3">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-slate-700">
-                    Öğrencinin Geleceği Günler:
-                  </span>
-                  <span className="text-[11px] font-bold text-indigo-600 bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-100">
-                    {groupDays.length > 0 ? `${groupDays.length} Gün Seçildi` : 'Gün Seçiniz'}
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                  {WEEK_DAYS.map((day) => {
-                    const isDaySelected = groupDays.includes(day);
-                    return (
-                      <button
-                        type="button"
-                        key={day}
-                        onClick={() => {
-                          if (isDaySelected) {
-                            setGroupDays(groupDays.filter(d => d !== day));
-                          } else {
-                            setGroupDays([...groupDays, day]);
-                          }
-                        }}
-                        className={`px-3 py-2.5 rounded-xl text-xs font-medium border flex items-center justify-center gap-2 transition-all ${
-                          isDaySelected
-                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-sm'
-                            : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                        }`}
-                      >
-                        <CheckCircle2 className={`w-3.5 h-3.5 ${isDaySelected ? 'text-white' : 'text-slate-300'}`} />
-                        <span>{day}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {groupDays.length > 0 && (
-                  <p className="text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                    📌 Öğrenci haftalık <strong>{groupDays.join(', ')}</strong> günlerinde grup eğitimine hazırlık için gelecektir.
-                  </p>
-                )}
-              </div>
-            )}
-          </div>
+          )}
 
           {/* DİĞER ÖĞRETMENLERİN ŞÖK GÖRÜŞLERİ (Sağ sütunda veya altta okunabilir) */}
           {!isSubjectTeacher && otherOpinions.length > 0 && (

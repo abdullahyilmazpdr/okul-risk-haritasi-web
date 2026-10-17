@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFromSheet, updateSheetRange, clearSheetRange, ensureSheetExists } from '@/lib/sheets';
+import { getLatestSchoolData } from '@/lib/db';
 import {
   generateUsername,
   generatePassword,
   buildWhatsAppLink,
-  slugifyTr
+  slugifyTr,
+  deduplicateClasses
 } from '@/lib/pdf-parser';
 
 function normalizeKey(str: string): string {
@@ -13,20 +15,41 @@ function normalizeKey(str: string): string {
 
 export async function POST(req: NextRequest) {
   try {
-    const accessToken = req.headers.get('Authorization')?.split('Bearer ')[1];
+    let accessToken = req.headers.get('Authorization')?.split('Bearer ')[1] || '';
     const body = await req.json();
     const {
       action,
-      spreadsheetId,
+      spreadsheetId: bodySpreadsheetId,
+      schoolKey,
       teacher,
       originalUsername,
       originalName,
-      existingTeachers
+      existingTeachers,
+      newPassword
     } = body;
+
+    let spreadsheetId = bodySpreadsheetId || '';
+
+    // Eğer öğretmen profil ekranından şifre değiştiriyorsa veya token/spreadsheetId eksikse okul bilgisinden tamamla
+    if (!spreadsheetId || !accessToken) {
+      try {
+        const latestSchool = await getLatestSchoolData(schoolKey || undefined);
+        if (latestSchool) {
+          if (!spreadsheetId && latestSchool.spreadsheetId) {
+            spreadsheetId = latestSchool.spreadsheetId;
+          }
+          if (!accessToken) {
+            accessToken = latestSchool.serviceAccountKey || latestSchool.accessToken || '';
+          }
+        }
+      } catch (e) {
+        console.warn('Okul bağlantı bilgisi alınamadı:', e);
+      }
+    }
 
     if (!spreadsheetId || !accessToken) {
       return NextResponse.json(
-        { error: 'Google E-Tablo kimliği veya yönetici oturumu eksik. Lütfen yeniden giriş yapınız.' },
+        { error: 'Google E-Tablo kimliği veya yönetici yetkilendirmesi eksik. Lütfen okul yöneticinizin sisteme giriş yapmasını sağlayınız.' },
         { status: 401 }
       );
     }
@@ -53,7 +76,7 @@ export async function POST(req: NextRequest) {
     let teachersList = (rows || [])
       .map((row: any[]) => {
         const name = (row[0] || '').trim();
-        const classes = (row[1] || '').split(',').map((c: string) => c.trim()).filter(Boolean);
+        const classes = deduplicateClasses((row[1] || '').split(',').map((c: string) => c.trim()).filter(Boolean));
         const fb = fallbackMap.get(normalizeKey(name)) || (row[2] ? fallbackMap.get(normalizeKey(row[2])) : null);
         const username = (row[2] || '').trim() || fb?.username || (name ? generateUsername(name) : '');
         const password = (row[3] || '').trim() || fb?.password || (name ? generatePassword() : '');
@@ -75,7 +98,7 @@ export async function POST(req: NextRequest) {
     if (teachersList.length === 0 && Array.isArray(existingTeachers) && existingTeachers.length > 0) {
       teachersList = existingTeachers.map((t: any) => {
         const name = (t.name || '').trim();
-        const classes = Array.isArray(t.classes) ? t.classes : [];
+        const classes = deduplicateClasses(Array.isArray(t.classes) ? t.classes : []);
         const username = (t.username || '').trim() || generateUsername(name);
         const password = (t.password || '').trim() || generatePassword();
         const roleOrBranch = (t.roleOrBranch || t.role || t.branch || 'Ders Öğretmeni').trim();
@@ -91,15 +114,59 @@ export async function POST(req: NextRequest) {
       }).filter((t: any) => t.name);
     }
 
-    if (action === 'add') {
+    if (action === 'change-password') {
+      const cleanNewPass = String(newPassword || '').trim();
+      if (!cleanNewPass || cleanNewPass.length < 6) {
+        return NextResponse.json({ error: 'Yeni şifre en az 6 karakter olmalıdır.' }, { status: 400 });
+      }
+
+      const targetUserKey = normalizeKey(originalUsername || teacher?.username || '');
+      const targetNameKey = normalizeKey(originalName || teacher?.name || '');
+
+      const idx = teachersList.findIndex(
+        (t: any) =>
+          (targetUserKey && normalizeKey(t.username) === targetUserKey) ||
+          (targetNameKey && normalizeKey(t.name) === targetNameKey)
+      );
+
+      if (idx === -1) {
+        return NextResponse.json(
+          { error: 'Öğretmen kaydınız E-Tabloda bulunamadı. Lütfen okul yöneticinizle iletişime geçiniz.' },
+          { status: 404 }
+        );
+      }
+
+      const current = teachersList[idx];
+      teachersList[idx] = {
+        ...current,
+        password: cleanNewPass,
+        whatsappLink: buildWhatsAppLink(current.name, current.username, cleanNewPass, current.classes, current.roleOrBranch)
+      };
+
+      const sheetValues = teachersList.map((t: any) => [
+        t.name,
+        t.classes.join(', '),
+        t.username,
+        t.password,
+        t.roleOrBranch || ''
+      ]);
+      await updateSheetRange(accessToken, spreadsheetId, 'Öğretmenler!A2:E', sheetValues);
+
+      return NextResponse.json({
+        success: true,
+        message: 'Şifreniz Google E-Tablo üzerinde başarıyla güncellendi!'
+      });
+    } else if (action === 'add') {
       if (!teacher || !teacher.name || !String(teacher.name).trim()) {
         return NextResponse.json({ error: 'Öğretmen adı soyadı zorunludur.' }, { status: 400 });
       }
 
       const cleanName = String(teacher.name).trim();
-      const classes = Array.isArray(teacher.classes)
-        ? teacher.classes.map((c: string) => String(c).trim()).filter(Boolean)
-        : String(teacher.classes || '').split(',').map((c: string) => c.trim()).filter(Boolean);
+      const classes = deduplicateClasses(
+        Array.isArray(teacher.classes)
+          ? teacher.classes.map((c: string) => String(c).trim()).filter(Boolean)
+          : String(teacher.classes || '').split(',').map((c: string) => c.trim()).filter(Boolean)
+      );
       const roleOrBranch = String(teacher.roleOrBranch || teacher.role || 'Ders Öğretmeni').trim();
 
       let username = String(teacher.username || '').trim() || generateUsername(cleanName);
@@ -112,7 +179,7 @@ export async function POST(req: NextRequest) {
 
       if (existingIdx >= 0) {
         const existing = teachersList[existingIdx];
-        const mergedClasses = Array.from(new Set([...existing.classes, ...classes]));
+        const mergedClasses = deduplicateClasses([...existing.classes, ...classes]);
         const finalUsername = String(teacher.username || '').trim() || existing.username || username;
         const finalPassword = String(teacher.password || '').trim() || existing.password || password;
         const finalRole = roleOrBranch || existing.roleOrBranch;
@@ -161,9 +228,11 @@ export async function POST(req: NextRequest) {
       }
 
       const cleanName = String(teacher.name).trim();
-      const classes = Array.isArray(teacher.classes)
-        ? teacher.classes.map((c: string) => String(c).trim()).filter(Boolean)
-        : String(teacher.classes || '').split(',').map((c: string) => c.trim()).filter(Boolean);
+      const classes = deduplicateClasses(
+        Array.isArray(teacher.classes)
+          ? teacher.classes.map((c: string) => String(c).trim()).filter(Boolean)
+          : String(teacher.classes || '').split(',').map((c: string) => c.trim()).filter(Boolean)
+      );
       const username = String(teacher.username || '').trim() || generateUsername(cleanName);
       const password = String(teacher.password || '').trim() || generatePassword();
       const roleOrBranch = String(teacher.roleOrBranch || teacher.role || 'Ders Öğretmeni').trim();

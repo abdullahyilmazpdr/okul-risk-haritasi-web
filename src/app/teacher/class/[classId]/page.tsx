@@ -6,6 +6,37 @@ import { useParams } from 'next/navigation';
 import { ArrowLeft, User, MessageSquarePlus, ShieldCheck, CheckCircle2, Clock } from 'lucide-react';
 import { FALLBACK_STUDENTS, FALLBACK_CLASSES } from '@/lib/school-constants';
 
+function getClassBaseKeyClient(clsName: string): string {
+  const trMap: Record<string, string> = {
+    'ç': 'c', 'Ç': 'c', 'ğ': 'g', 'Ğ': 'g', 'ı': 'i', 'I': 'i', 'İ': 'i',
+    'ö': 'o', 'Ö': 'o', 'ş': 's', 'Ş': 's', 'ü': 'u', 'Ü': 'u'
+  };
+  return (clsName || '')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/^ÖE[İI]U\s*-\s*/i, '')
+    .replace(/Sınıf\s*Listesi.*$/i, '')
+    .split('')
+    .map(ch => trMap[ch] || ch)
+    .join('')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+}
+
+function deduplicateClassesClient(classList: string[]): string[] {
+  const map = new Map<string, string>();
+  for (const raw of classList || []) {
+    const trimmed = (raw || '').trim();
+    if (!trimmed) continue;
+    const key = getClassBaseKeyClient(trimmed);
+    if (!key) continue;
+    const existing = map.get(key);
+    if (!existing || trimmed.length > existing.length) {
+      map.set(key, trimmed);
+    }
+  }
+  return Array.from(map.values());
+}
+
 function ClassDetailsContent() {
   const params = useParams();
   const classId = (params?.classId as string) || '1';
@@ -24,6 +55,9 @@ function ClassDetailsContent() {
     if (stored) {
       try {
         currentTeacher = JSON.parse(stored);
+        if (Array.isArray(currentTeacher.classes)) {
+          currentTeacher.classes = deduplicateClassesClient(currentTeacher.classes);
+        }
         setTeacher(currentTeacher);
       } catch (e) {}
     }
@@ -60,7 +94,7 @@ function ClassDetailsContent() {
           // Eğer resolvedClass henüz genel ise ve listede sınıflar varsa ilk sınıfı al
           if (resolvedClass === 'Genel Sınıf' && allParsed[0]?.className) {
             const numericIndex = parseInt(classId, 10);
-            const distinctClasses = Array.from(new Set(allParsed.map((s: any) => s.className).filter(Boolean)));
+            const distinctClasses = deduplicateClassesClient(allParsed.map((s: any) => s.className).filter(Boolean));
             if (!isNaN(numericIndex) && numericIndex >= 1 && numericIndex <= distinctClasses.length) {
               resolvedClass = distinctClasses[numericIndex - 1] as string;
             } else {
@@ -69,11 +103,11 @@ function ClassDetailsContent() {
           }
 
           // Sınıfa göre filtrele (Yalnızca bu sınıfa ait öğrencileri al)
-          const normClass = resolvedClass.toLowerCase().replace(/[^a-z0-9]/g, '');
+          const baseKey = getClassBaseKeyClient(resolvedClass);
           const filtered = allParsed.filter((s: any) => {
             if (!s.className) return false;
-            const normStudentClass = s.className.toLowerCase().replace(/[^a-z0-9]/g, '');
-            return normStudentClass === normClass || normStudentClass.includes(normClass) || normClass.includes(normStudentClass);
+            const sKey = getClassBaseKeyClient(s.className);
+            return sKey === baseKey || (sKey && baseKey && (sKey.includes(baseKey) || baseKey.includes(sKey)));
           });
 
           loadedStudents = filtered;
@@ -108,11 +142,11 @@ function ClassDetailsContent() {
           if (schoolJson?.data?.students && Array.isArray(schoolJson.data.students) && schoolJson.data.students.length > 0) {
             localStorage.setItem('school_students', JSON.stringify(schoolJson.data.students));
             
-            const normClass = resolvedClass.toLowerCase().replace(/[^a-z0-9]/g, '');
+            const baseKey = getClassBaseKeyClient(resolvedClass);
             const filtered = schoolJson.data.students.filter((s: any) => {
               if (!s.className) return false;
-              const normStudentClass = s.className.toLowerCase().replace(/[^a-z0-9]/g, '');
-              return normStudentClass === normClass || normStudentClass.includes(normClass) || normClass.includes(normStudentClass);
+              const sKey = getClassBaseKeyClient(s.className);
+              return sKey === baseKey || (sKey && baseKey && (sKey.includes(baseKey) || baseKey.includes(sKey)));
             });
 
             freshStudents = filtered;
@@ -195,7 +229,12 @@ function ClassDetailsContent() {
   }, [classId]);
 
   const isAdmin = Boolean(teacher?.isAdmin || teacher?.role?.toLowerCase().includes('müdür') || teacher?.role?.toLowerCase().includes('idare'));
-  const isClassTeacher = Boolean(teacher?.isClassTeacher || teacher?.role?.toLowerCase().includes('sınıf') || teacher?.role?.toLowerCase().includes('rehber'));
+  const isClassTeacher = Boolean(
+    teacher?.isClassTeacher ||
+    teacher?.role?.toLowerCase().includes('sınıf') ||
+    teacher?.role?.toLowerCase().includes('rehber') ||
+    teacher?.role?.toLowerCase().includes('özel eğitim')
+  );
   const isSubjectTeacher = !isAdmin && !isClassTeacher;
 
   const maleCount = students.filter(s => s.gender === 'Erkek').length;
