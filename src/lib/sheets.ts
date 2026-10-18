@@ -103,9 +103,9 @@ async function withSheetsFallback<T>(
   spreadsheetId: string,
   fn: (sheets: ReturnType<typeof getSheetsClient>) => Promise<T>
 ): Promise<T> {
-  // Arka planda servis hesabına yetki tanımlamasını tetikle
+  // Servis hesabına yetki tanımlamasını tamamla (önbellekli olduğu için yalnızca ilk çağrıda çalışır)
   if (typeof accessToken === 'string' && accessToken && !accessToken.includes('"private_key"')) {
-    ensureServiceAccountShared(accessToken, spreadsheetId).catch(() => {});
+    await ensureServiceAccountShared(accessToken, spreadsheetId).catch(() => {});
   }
 
   try {

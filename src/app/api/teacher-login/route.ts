@@ -97,22 +97,23 @@ export async function POST(req: NextRequest) {
     const normUsernameAlpha = normUsername.replace(/[^a-z0-9]/g, '');
 
     let allTeachers: any[] = [];
+    let sheetStudents: any[] = [];
     let targetSpreadsheetId = spreadsheetId;
     let targetToken = accessToken;
     let foundSchoolName = '';
+    let serverFallbackToken = process.env.GOOGLE_SERVICE_ACCOUNT_KEY || '';
 
-    // 1. Eğer schoolKey (MEBBIS Kurum Kodu) verilmişse okulun E-Tablo bağlantı bilgilerini bul
-    if (cleanSchoolKey) {
-      try {
-        const schoolByKey = await getLatestSchoolData(cleanSchoolKey);
-        if (schoolByKey) {
-          if (schoolByKey.spreadsheetId) targetSpreadsheetId = schoolByKey.spreadsheetId;
-          targetToken = schoolByKey.serviceAccountKey || schoolByKey.accessToken || targetToken;
-          foundSchoolName = schoolByKey.schoolName || '';
-        }
-      } catch (e) {
-        console.warn('Kurum koduna göre okul arama hatası:', e);
+    // 1. Okulun E-Tablo bağlantı bilgilerini bul
+    try {
+      const latest = await getLatestSchoolData(cleanSchoolKey || undefined);
+      if (latest) {
+        if (latest.spreadsheetId) targetSpreadsheetId = latest.spreadsheetId;
+        serverFallbackToken = latest.serviceAccountKey || latest.accessToken || serverFallbackToken;
+        if (!targetToken) targetToken = serverFallbackToken;
+        foundSchoolName = latest.schoolName || '';
       }
+    } catch (e) {
+      console.warn('Kurum koduna göre okul arama hatası:', e);
     }
 
     // 2. İstemciden gelen yerel önbellek öğretmenleri (aynı cihazdan test edilirse yedek)
@@ -120,24 +121,36 @@ export async function POST(req: NextRequest) {
       allTeachers = [...cachedTeachers];
     }
 
-    // 3. Eğer hala hedef tablo yoksa Firestore aktif okulundan sadece E-Tablo bağlantı bilgisini yükle
-    if (!targetSpreadsheetId || !targetToken) {
+    const readSheetSafe = async (range: string) => {
       try {
-        const latest = await getLatestSchoolData(cleanSchoolKey || undefined);
-        if (latest) {
-          if (!targetSpreadsheetId && latest.spreadsheetId) targetSpreadsheetId = latest.spreadsheetId;
-          if (!targetToken) targetToken = latest.serviceAccountKey || latest.accessToken || process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
-          if (!foundSchoolName && latest.schoolName) foundSchoolName = latest.schoolName;
+        return await readFromSheet(targetToken, targetSpreadsheetId, range);
+      } catch (err) {
+        if (serverFallbackToken && serverFallbackToken !== targetToken) {
+          targetToken = serverFallbackToken;
+          return await readFromSheet(serverFallbackToken, targetSpreadsheetId, range).catch(() => []);
         }
-      } catch (e) {
-        console.warn('Aktif okul verisi alınamadı:', e);
+        return [];
       }
-    }
+    };
 
-    // 4. Öğretmen kullanıcı adı ve şifrelerini doğrudan okulun Google E-Tablosundan (Öğretmenler!A2:E) oku
+    // 3. Öğretmenleri ve Öğrencileri doğrudan okulun Google E-Tablosundan oku
     if (targetSpreadsheetId && targetToken) {
       try {
-        const rows = await readFromSheet(targetToken, targetSpreadsheetId, 'Öğretmenler!A2:E');
+        const [rows, studentRows] = await Promise.all([
+          readSheetSafe('Öğretmenler!A2:E'),
+          readSheetSafe('Öğrenciler!A2:C')
+        ]);
+
+        if (studentRows && studentRows.length > 0) {
+          sheetStudents = studentRows
+            .map((row: any[]) => ({
+              className: (row[0] || '').trim(),
+              number: (row[1] || '').trim(),
+              name: (row[2] || '').trim()
+            }))
+            .filter((s: any) => s.number || s.name);
+        }
+
         if (rows && rows.length > 0) {
           const sheetTeachers = rows.map((row: any[]) => ({
             name: (row[0] || '').trim(),
@@ -243,6 +256,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       success: true,
       sessionToken,
+      students: sheetStudents,
       teacher: {
         name: matchedTeacher.name || cleanUsername,
         username: matchedTeacher.username || cleanUsername,

@@ -6,19 +6,19 @@ import { Users, ArrowRight, GraduationCap, School } from 'lucide-react';
 import { FALLBACK_CLASSES } from '@/lib/school-constants';
 
 function getClassBaseKeyClient(clsName: string): string {
-  const trMap: Record<string, string> = {
-    'ç': 'c', 'Ç': 'c', 'ğ': 'g', 'Ğ': 'g', 'ı': 'i', 'I': 'i', 'İ': 'i',
-    'ö': 'o', 'Ö': 'o', 'ş': 's', 'Ş': 's', 'ü': 'u', 'Ü': 'u'
-  };
   return (clsName || '')
     .replace(/\([^)]*\)/g, '')
     .replace(/^ÖE[İI]U\s*-\s*/i, '')
     .replace(/Sınıf\s*Listesi.*$/i, '')
-    .split('')
-    .map(ch => trMap[ch] || ch)
-    .join('')
+    .replace(/İ/g, 'i')
+    .replace(/I/g, 'ı')
+    .replace(/Ç/g, 'ç')
+    .replace(/Ğ/g, 'ğ')
+    .replace(/Ö/g, 'ö')
+    .replace(/Ş/g, 'ş')
+    .replace(/Ü/g, 'ü')
     .toLowerCase()
-    .replace(/[^a-z0-9]/g, '');
+    .replace(/[^a-z0-9çğıöşü]/g, '');
 }
 
 function deduplicateClassesClient(classList: string[]): string[] {
@@ -59,8 +59,8 @@ export default function TeacherDashboard() {
       }
       setTeacher(parsed);
 
-      const buildClassList = (allStudents: any[]) => {
-        let targetClassNames: string[] = deduplicateClassesClient(parsed.classes || []);
+      const buildClassList = (allStudents: any[], overrideTeacherClasses?: string[]) => {
+        let targetClassNames: string[] = deduplicateClassesClient(overrideTeacherClasses || parsed.classes || []);
         if ((!targetClassNames.length || parsed.isAdmin) && allStudents.length > 0) {
           const distinctClasses = deduplicateClassesClient(allStudents.map(s => s.className).filter(Boolean));
           if (distinctClasses.length > 0) {
@@ -76,7 +76,7 @@ export default function TeacherDashboard() {
             const matchingStudents = allStudents.filter(s => {
               if (!s.className) return false;
               const sKey = getClassBaseKeyClient(s.className);
-              if (sKey === baseKey || (sKey && baseKey && (sKey.includes(baseKey) || baseKey.includes(sKey)))) {
+              if (sKey === baseKey) {
                 if (s.className.length > displayName.length) {
                   displayName = s.className;
                 }
@@ -118,7 +118,7 @@ export default function TeacherDashboard() {
       }
       buildClassList(localStudents);
 
-      // 2. Canlı E-Tablo verisinden öğrenci sayılarını güncelle
+      // 2. Canlı E-Tablo verisinden öğrenci sayılarını ve öğretmenin güncel sınıflarını senkronize et
       const schoolKey = parsed?.schoolKey || localStorage.getItem('last_school_key') || '';
       const spreadsheetId = parsed?.spreadsheetId || localStorage.getItem('active_spreadsheet_id') || '';
       const url = new URL('/api/school-data', window.location.origin);
@@ -128,9 +128,27 @@ export default function TeacherDashboard() {
       fetch(url.toString())
         .then(r => r.json())
         .then(json => {
+          let updatedClasses: string[] | undefined = undefined;
+          if (json?.data?.teachers && Array.isArray(json.data.teachers)) {
+            const uNorm = (parsed.username || '').toLowerCase().trim();
+            const nNorm = (parsed.name || '').toLowerCase().trim();
+            const liveTeacher = json.data.teachers.find(
+              (t: any) =>
+                (uNorm && (t.username || '').toLowerCase().trim() === uNorm) ||
+                (nNorm && (t.name || '').toLowerCase().trim() === nNorm)
+            );
+            if (liveTeacher && Array.isArray(liveTeacher.classes) && liveTeacher.classes.length > 0) {
+              updatedClasses = deduplicateClassesClient(liveTeacher.classes);
+              parsed.classes = updatedClasses;
+              localStorage.setItem('teacher_session', JSON.stringify(parsed));
+              setTeacher({ ...parsed });
+            }
+          }
           if (json?.data?.students && Array.isArray(json.data.students)) {
             localStorage.setItem('school_students', JSON.stringify(json.data.students));
-            buildClassList(json.data.students);
+            buildClassList(json.data.students, updatedClasses);
+          } else if (updatedClasses) {
+            buildClassList(localStudents, updatedClasses);
           }
         })
         .catch(() => {});

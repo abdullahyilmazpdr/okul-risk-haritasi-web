@@ -29,22 +29,24 @@ export async function POST(req: NextRequest) {
     } = body;
 
     let spreadsheetId = bodySpreadsheetId || '';
+    let latestSchool: any = null;
+    try {
+      latestSchool = await getLatestSchoolData(schoolKey || undefined);
+    } catch (e) {
+      console.warn('Okul bağlantı bilgisi alınamadı:', e);
+    }
 
-    // Eğer öğretmen profil ekranından şifre değiştiriyorsa veya token/spreadsheetId eksikse okul bilgisinden tamamla
-    if (!spreadsheetId || !accessToken) {
-      try {
-        const latestSchool = await getLatestSchoolData(schoolKey || undefined);
-        if (latestSchool) {
-          if (!spreadsheetId && latestSchool.spreadsheetId) {
-            spreadsheetId = latestSchool.spreadsheetId;
-          }
-          if (!accessToken) {
-            accessToken = latestSchool.serviceAccountKey || latestSchool.accessToken || process.env.GOOGLE_SERVICE_ACCOUNT_KEY || '';
-          }
-        }
-      } catch (e) {
-        console.warn('Okul bağlantı bilgisi alınamadı:', e);
-      }
+    const serverFallbackToken =
+      latestSchool?.serviceAccountKey ||
+      latestSchool?.accessToken ||
+      process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+      '';
+
+    if (!spreadsheetId && latestSchool?.spreadsheetId) {
+      spreadsheetId = latestSchool.spreadsheetId;
+    }
+    if (!accessToken) {
+      accessToken = serverFallbackToken;
     }
 
     if (!spreadsheetId || !accessToken) {
@@ -62,7 +64,15 @@ export async function POST(req: NextRequest) {
       'Görevi / Branşı'
     ]);
 
-    const rows = await readFromSheet(accessToken, spreadsheetId, 'Öğretmenler!A2:E').catch(() => []);
+    let rows: any[][] = [];
+    try {
+      rows = await readFromSheet(accessToken, spreadsheetId, 'Öğretmenler!A2:E');
+    } catch (readErr) {
+      if (serverFallbackToken && serverFallbackToken !== accessToken) {
+        accessToken = serverFallbackToken;
+        rows = await readFromSheet(accessToken, spreadsheetId, 'Öğretmenler!A2:E').catch(() => []);
+      }
+    }
 
     // Mevcut şifre yedekleri (istemciden gelen)
     const fallbackMap = new Map<string, any>();
@@ -218,14 +228,13 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({ error: 'Güncellenecek öğretmen bilgileri eksik.' }, { status: 400 });
       }
 
-      const targetKey = normalizeKey(originalUsername || originalName || teacher.username || teacher.name);
+      const targetUserKey = normalizeKey(originalUsername || teacher.username || '');
+      const targetNameKey = normalizeKey(originalName || teacher.name || '');
       const idx = teachersList.findIndex(
-        (t: any) => normalizeKey(t.username) === targetKey || normalizeKey(t.name) === targetKey
+        (t: any) =>
+          (targetUserKey && normalizeKey(t.username) === targetUserKey) ||
+          (targetNameKey && normalizeKey(t.name) === targetNameKey)
       );
-
-      if (idx === -1) {
-        return NextResponse.json({ error: 'Güncellenecek öğretmen bulunamadı.' }, { status: 404 });
-      }
 
       const cleanName = String(teacher.name).trim();
       const classes = deduplicateClasses(
@@ -237,7 +246,7 @@ export async function POST(req: NextRequest) {
       const password = String(teacher.password || '').trim() || generatePassword();
       const roleOrBranch = String(teacher.roleOrBranch || teacher.role || 'Ders Öğretmeni').trim();
 
-      teachersList[idx] = {
+      const updatedTeacherObj = {
         name: cleanName,
         classes,
         username,
@@ -246,10 +255,21 @@ export async function POST(req: NextRequest) {
         role: roleOrBranch,
         whatsappLink: buildWhatsAppLink(cleanName, username, password, classes, roleOrBranch)
       };
+
+      if (idx === -1) {
+        teachersList.unshift(updatedTeacherObj);
+      } else {
+        teachersList[idx] = updatedTeacherObj;
+      }
     } else if (action === 'delete') {
-      const targetKey = normalizeKey(originalUsername || originalName || teacher?.username || teacher?.name || '');
+      const targetUserKey = normalizeKey(originalUsername || teacher?.username || '');
+      const targetNameKey = normalizeKey(originalName || teacher?.name || '');
       teachersList = teachersList.filter(
-        (t: any) => normalizeKey(t.username) !== targetKey && normalizeKey(t.name) !== targetKey
+        (t: any) =>
+          !(
+            (targetUserKey && normalizeKey(t.username) === targetUserKey) ||
+            (targetNameKey && normalizeKey(t.name) === targetNameKey)
+          )
       );
     } else {
       return NextResponse.json({ error: 'Geçersiz işlem türü.' }, { status: 400 });
@@ -264,7 +284,15 @@ export async function POST(req: NextRequest) {
         t.password,
         t.roleOrBranch || ''
       ]);
-      await updateSheetRange(accessToken, spreadsheetId, 'Öğretmenler!A2:E', sheetValues);
+      try {
+        await updateSheetRange(accessToken, spreadsheetId, 'Öğretmenler!A2:E', sheetValues);
+      } catch (writeErr) {
+        if (serverFallbackToken && serverFallbackToken !== accessToken) {
+          await updateSheetRange(serverFallbackToken, spreadsheetId, 'Öğretmenler!A2:E', sheetValues);
+        } else {
+          throw writeErr;
+        }
+      }
     } else {
       await clearSheetRange(accessToken, spreadsheetId, 'Öğretmenler!A2:E');
     }

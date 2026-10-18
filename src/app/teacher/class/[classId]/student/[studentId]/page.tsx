@@ -47,46 +47,72 @@ function StudentDetailsContent() {
   const WEEK_DAYS = ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma'];
 
   // Hazır ŞÖK Görüşü Şablonları Durumu
-  const [activeTemplateTab, setActiveTemplateTab] = useState<'positive' | 'support' | 'bep'>('positive');
+  type TemplateTabKey = 'ozel_egitim' | 'oz_bakim' | 'positive' | 'support' | 'bep';
+  const [activeTemplateTab, setActiveTemplateTab] = useState<TemplateTabKey>('ozel_egitim');
   const [showTemplates, setShowTemplates] = useState(true);
 
   const SUBJECT_PREFIX_TAGS = [
     '[Genel Görüş]:',
+    '[Özel Eğitim / BEP]:',
+    '[Öz Bakım & Günlük Yaşam]:',
+    '[İletişim & Sosyal Uyum]:',
     '[Ders İçi Katılım]:',
     '[Uygulama / Atölye]:',
     '[Görsel Sanatlar]:',
     '[Müzik]:',
-    '[Beden Eğitimi]:',
-    '[Sosyal Uyum]:'
+    '[Beden Eğitimi]:'
   ];
 
-  const SOK_OPINION_TEMPLATES: Record<'positive' | 'support' | 'bep', { title: string; items: string[] }> = {
+  const SOK_OPINION_TEMPLATES: Record<TemplateTabKey, { title: string; items: string[] }> = {
+    ozel_egitim: {
+      title: 'Özel Eğitim & BEP',
+      items: [
+        'BEP (Bireyselleştirilmiş Eğitim Programı) kapsamındaki kısa ve uzun dönemli hedeflerde bireysel hızına uygun ilerleme göstermektedir.',
+        'Öğretim sürecinde fiziksel, sözel ve model olma ipuçları kullanıldığında beceri basamaklarını başarıyla tamamlamaktadır.',
+        'Göz kontağı kurma, ortak dikkat oluşturma ve tek basamaklı alıcı dil yönergelerini yerine getirme becerileri gelişmektedir.',
+        'Akademik ve işlevsel becerilerin kalıcılığı için çoklu duyuya hitap eden somut materyal ve görsel kartlarla desteklenmelidir.',
+        'Bireysel eğitimden grup eğitimine geçiş sürecinde akranlarıyla aynı ortamda bulunma ve etkinlik sürdürme süresi artmaktadır.',
+        'Problem davranışların azaltılması ve olumlu davranışların pekiştirilmesi amacıyla uygulanan pekiştirme tarifelerine olumlu yanıt vermektedir.'
+      ]
+    },
+    oz_bakim: {
+      title: 'Öz Bakım & Günlük Yaşam',
+      items: [
+        'Yemek yeme, el-yüz yıkama ve kişisel temizlik gibi temel öz bakım becerilerini bağımsız veya kısmi ipucuyla yerine getirmektedir.',
+        'Giyinme-soyunma, eşyalarını toplama ve sınıf içi günlük yaşam rutinlerini takip etme becerilerinde olumlu gelişim gözlenmektedir.',
+        'Tuvalet ve öz bakım rutinlerinde bağımsızlığının artırılması için okul ve ev ortamında tutarlı ipucu sunumu sürdürülmelidir.',
+        'Beslenme saatlerinde ve ortak kullanım alanlarında güvenlik ile hijyen kurallarına uyum sağlamaktadır.',
+        'Günlük yaşam ve toplumsal uyum becerilerinin ev ortamına genellenmesi için aile katılımı ve ev tekrarları büyük önem taşımaktadır.'
+      ]
+    },
     positive: {
       title: 'Olumlu / Güçlü Yönler',
       items: [
         'Ders içi etkinliklere istekle katılır ve verilen yönergeleri takip eder.',
         'Akranlarıyla uyumlu iletişim kurar, grup çalışmalarına olumlu katkı sağlar.',
         'Verilen görev ve sorumlulukları zamanında yerine getirmeye özen gösterir.',
-        'Uygulamalı ve görsel çalışmalarda ilgi ve motivasyonu yüksektir.',
-        'Sınıf içi kurallara uyar, öğretmenleriyle iş birliğine açıktır.'
+        'Uygulamalı, sanatsal ve sportif çalışmalarda ilgi ve motivasyonu yüksektir.',
+        'Sınıf içi kurallara uyar, öğretmenleriyle iş birliğine açıktır.',
+        'İnce ve kaba motor beceri gerektiren atölye/uygulama etkinliklerinde el-göz koordinasyonu gelişmektedir.'
       ]
     },
     support: {
       title: 'Desteklenecek Alanlar',
       items: [
         'Dikkat süresinin artırılması için kısa, net ve somut yönergelerle desteklenmelidir.',
-        'Akademik ve uygulama becerilerinin pekiştirilmesi için bireysel tekrar çalışmaları yapılmalıdır.',
-        'Sosyal uyum ve özgüven gelişimi için sınıf içi sorumluluklar verilerek teşvik edilmelidir.',
-        'İnce motor ve el-göz koordinasyonu gerektiren etkinliklerde adım adım rehberlik sunulmalıdır.',
-        'Duygusal öz düzenleme ve akran iletişimi konusunda rehberlik desteği sürdürülmelidir.'
+        'İfade edici dil ve iletişim başlatma becerilerinin geliştirilmesi için alternatif/destekleyici iletişim etkinlikleri artırılmalıdır.',
+        'Duyusal hassasiyetleri ve duygusal öz düzenleme becerileri göz önünde bulundurularak sakinleştirici geçiş rutinleri uygulanmalıdır.',
+        'İnce motor, kalem tutma ve el-göz koordinasyonu gerektiren etkinliklerde adım adım fiziksel/sözel rehberlik sunulmalıdır.',
+        'Sosyal uyum ve özgüven gelişimi için sınıf içi küçük görev ve sorumluluklar verilerek teşvik edilmelidir.'
       ]
     },
     bep: {
-      title: 'BEP & Kurul Önerileri',
+      title: 'Kurul & ŞÖK Kararları',
       items: [
-        'BEP hedefleri doğrultusunda görsel ve somut materyallerle bireyselleştirilmiş öğretim sürdürülmesi uygundur.',
-        'Devam-devamsızlık takibinin düzenli yapılması ve aile-okul iş birliğinin güçlendirilmesi önerilir.',
-        'Mevcut eğitim-öğretim ortamında akranlarıyla birlikte desteklenerek devam etmesi uygundur.'
+        'BEP hedefleri doğrultusunda görsel ve somut materyallerle bireyselleştirilmiş öğretimin sürdürülmesi uygundur.',
+        'Öğrencinin grup eğitimine uyum düzeyini artırmak amacıyla haftalık belirli günlerde grup eğitimine hazırlık programına katılımı faydalı olacaktır.',
+        'Devam-devamsızlık takibinin düzenli yapılması ve okul-aile-rehberlik servisi iş birliğinin güçlendirilmesi önerilir.',
+        'Mevcut özel eğitim / eğitim-öğretim ortamında bireysel farklılıkları gözetilerek desteklenmeye devam edilmesi uygundur.'
       ]
     }
   };
@@ -146,7 +172,13 @@ function StudentDetailsContent() {
       }
 
       // Canlı API'den de öğrenci bilgilerini teyit et
-      fetch('/api/school-data')
+      const storedSpreadsheetIdForSchool = parsedTeacher?.spreadsheetId || localStorage.getItem('active_spreadsheet_id') || '';
+      const schoolKeyForSchool = parsedTeacher?.schoolKey || localStorage.getItem('last_school_key') || '';
+      const schoolFetchUrl = new URL('/api/school-data', window.location.origin);
+      if (storedSpreadsheetIdForSchool) schoolFetchUrl.searchParams.set('spreadsheetId', storedSpreadsheetIdForSchool);
+      if (schoolKeyForSchool) schoolFetchUrl.searchParams.set('schoolKey', schoolKeyForSchool);
+
+      fetch(schoolFetchUrl.toString())
         .then(res => res.json())
         .then(data => {
           if (data?.data?.students && Array.isArray(data.data.students)) {
@@ -594,19 +626,19 @@ function StudentDetailsContent() {
                   </div>
 
                   {/* 2. Kategorili Hazır ŞÖK Görüş Şablonları */}
-                  <div className="pt-2.5 border-t border-slate-200/80 space-y-2">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <span className="text-[11px] font-bold text-slate-600 flex items-center gap-1">
+                  <div className="pt-2.5 border-t border-slate-200/80 space-y-2.5">
+                    <div className="flex flex-col gap-2">
+                      <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1">
                         <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-                        Hazır Görüş Şablonları (Tıklayarak metne ekleyin / çıkarın):
+                        Özel Eğitim ve ŞÖK Hazır Görüş Şablonları (Tıklayarak metne ekleyin / çıkarın):
                       </span>
-                      <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200">
-                        {(['positive', 'support', 'bep'] as const).map((tabKey) => (
+                      <div className="flex flex-wrap items-center gap-1 bg-white p-1.5 rounded-xl border border-slate-200">
+                        {(['ozel_egitim', 'oz_bakim', 'positive', 'support', 'bep'] as const).map((tabKey) => (
                           <button
                             type="button"
                             key={tabKey}
                             onClick={() => setActiveTemplateTab(tabKey)}
-                            className={`text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-colors ${
+                            className={`text-[11px] font-semibold px-2.5 py-1.5 rounded-lg transition-colors ${
                               activeTemplateTab === tabKey
                                 ? 'bg-emerald-600 text-white shadow-xs'
                                 : 'text-slate-600 hover:bg-slate-100'
@@ -626,18 +658,29 @@ function StudentDetailsContent() {
                             type="button"
                             key={idx}
                             onClick={() => handleToggleTemplateSentence(sentence)}
-                            className={`text-left text-xs p-2.5 rounded-xl border transition-all flex items-start gap-2 ${
+                            className={`text-left text-xs p-2.5 rounded-xl border transition-all flex items-start justify-between gap-2 ${
                               isAdded
                                 ? 'bg-emerald-50 border-emerald-400 text-emerald-950 font-medium'
                                 : 'bg-white border-slate-200 text-slate-700 hover:border-emerald-300 hover:bg-emerald-50/30'
                             }`}
                           >
-                            <CheckCircle2
-                              className={`w-4 h-4 shrink-0 mt-0.5 ${
-                                isAdded ? 'text-emerald-600' : 'text-slate-300'
+                            <div className="flex items-start gap-2">
+                              <CheckCircle2
+                                className={`w-4 h-4 shrink-0 mt-0.5 ${
+                                  isAdded ? 'text-emerald-600' : 'text-slate-300'
+                                }`}
+                              />
+                              <span className="leading-snug">{sentence}</span>
+                            </div>
+                            <span
+                              className={`shrink-0 text-[10px] font-bold px-2 py-0.5 rounded-md border ${
+                                isAdded
+                                  ? 'bg-emerald-600 text-white border-emerald-600'
+                                  : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                               }`}
-                            />
-                            <span className="leading-snug">{sentence}</span>
+                            >
+                              {isAdded ? '✓ EKLENDİ' : '+ TIKLA EKLE'}
+                            </span>
                           </button>
                         );
                       })}

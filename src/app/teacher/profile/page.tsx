@@ -13,20 +13,20 @@ import {
 import toast from 'react-hot-toast';
 
 function deduplicateClassesClient(classList: string[]): string[] {
-  const trMap: Record<string, string> = {
-    'ç': 'c', 'Ç': 'c', 'ğ': 'g', 'Ğ': 'g', 'ı': 'i', 'I': 'i', 'İ': 'i',
-    'ö': 'o', 'Ö': 'o', 'ş': 's', 'Ş': 's', 'ü': 'u', 'Ü': 'u'
-  };
   const getKey = (str: string) =>
     (str || '')
       .replace(/\([^)]*\)/g, '')
       .replace(/^ÖE[İI]U\s*-\s*/i, '')
       .replace(/Sınıf\s*Listesi.*$/i, '')
-      .split('')
-      .map(ch => trMap[ch] || ch)
-      .join('')
+      .replace(/İ/g, 'i')
+      .replace(/I/g, 'ı')
+      .replace(/Ç/g, 'ç')
+      .replace(/Ğ/g, 'ğ')
+      .replace(/Ö/g, 'ö')
+      .replace(/Ş/g, 'ş')
+      .replace(/Ü/g, 'ü')
       .toLowerCase()
-      .replace(/[^a-z0-9]/g, '');
+      .replace(/[^a-z0-9çğıöşü]/g, '');
 
   const map = new Map<string, string>();
   for (const raw of classList || []) {

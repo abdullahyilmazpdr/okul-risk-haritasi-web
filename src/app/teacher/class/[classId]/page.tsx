@@ -7,19 +7,19 @@ import { ArrowLeft, User, MessageSquarePlus, ShieldCheck, CheckCircle2, Clock } 
 import { FALLBACK_STUDENTS, FALLBACK_CLASSES } from '@/lib/school-constants';
 
 function getClassBaseKeyClient(clsName: string): string {
-  const trMap: Record<string, string> = {
-    'ç': 'c', 'Ç': 'c', 'ğ': 'g', 'Ğ': 'g', 'ı': 'i', 'I': 'i', 'İ': 'i',
-    'ö': 'o', 'Ö': 'o', 'ş': 's', 'Ş': 's', 'ü': 'u', 'Ü': 'u'
-  };
   return (clsName || '')
     .replace(/\([^)]*\)/g, '')
     .replace(/^ÖE[İI]U\s*-\s*/i, '')
     .replace(/Sınıf\s*Listesi.*$/i, '')
-    .split('')
-    .map(ch => trMap[ch] || ch)
-    .join('')
+    .replace(/İ/g, 'i')
+    .replace(/I/g, 'ı')
+    .replace(/Ç/g, 'ç')
+    .replace(/Ğ/g, 'ğ')
+    .replace(/Ö/g, 'ö')
+    .replace(/Ş/g, 'ş')
+    .replace(/Ü/g, 'ü')
     .toLowerCase()
-    .replace(/[^a-z0-9]/g, '');
+    .replace(/[^a-z0-9çğıöşü]/g, '');
 }
 
 function deduplicateClassesClient(classList: string[]): string[] {
@@ -107,8 +107,12 @@ function ClassDetailsContent() {
           const filtered = allParsed.filter((s: any) => {
             if (!s.className) return false;
             const sKey = getClassBaseKeyClient(s.className);
-            return sKey === baseKey || (sKey && baseKey && (sKey.includes(baseKey) || baseKey.includes(sKey)));
+            return sKey === baseKey;
           });
+
+          if (filtered.length > 0 && filtered[0]?.className && filtered[0].className.length > resolvedClass.length) {
+            resolvedClass = filtered[0].className;
+          }
 
           loadedStudents = filtered;
         }
@@ -122,18 +126,15 @@ function ClassDetailsContent() {
     // 2. Durumları ve /api/school-data üzerinden canlı öğrenci verilerini çek
     const loadDataAndStatuses = async () => {
       try {
-        const storedSpreadsheetId = localStorage.getItem('active_spreadsheet_id');
-        const storedToken = localStorage.getItem('google_access_token');
+        const storedSpreadsheetId = currentTeacher?.spreadsheetId || localStorage.getItem('active_spreadsheet_id') || '';
         const schoolKey = currentTeacher?.schoolKey || localStorage.getItem('last_school_key') || '';
 
-        // Canlı okul verisini API'den çek
+        // Canlı okul verisini API'den çek (sunucu tarafındaki okul / servis hesabı yetkilendirmesini kullanır)
         const schoolDataUrl = new URL('/api/school-data', window.location.origin);
         if (storedSpreadsheetId) schoolDataUrl.searchParams.set('spreadsheetId', storedSpreadsheetId);
         if (schoolKey) schoolDataUrl.searchParams.set('schoolKey', schoolKey);
 
-        const schoolRes = await fetch(schoolDataUrl.toString(), {
-          headers: storedToken ? { 'Authorization': `Bearer ${storedToken}` } : {}
-        });
+        const schoolRes = await fetch(schoolDataUrl.toString());
 
         let freshStudents = loadedStudents;
 
@@ -146,8 +147,12 @@ function ClassDetailsContent() {
             const filtered = schoolJson.data.students.filter((s: any) => {
               if (!s.className) return false;
               const sKey = getClassBaseKeyClient(s.className);
-              return sKey === baseKey || (sKey && baseKey && (sKey.includes(baseKey) || baseKey.includes(sKey)));
+              return sKey === baseKey;
             });
+
+            if (filtered.length > 0 && filtered[0]?.className && filtered[0].className.length > resolvedClass.length) {
+              setCurrentClassName(filtered[0].className);
+            }
 
             freshStudents = filtered;
             setStudents(freshStudents);
@@ -160,9 +165,7 @@ function ClassDetailsContent() {
         if (storedSpreadsheetId) opinionUrl.searchParams.set('spreadsheetId', storedSpreadsheetId);
         if (schoolKey) opinionUrl.searchParams.set('schoolKey', schoolKey);
 
-        const opRes = await fetch(opinionUrl.toString(), {
-          headers: storedToken ? { 'Authorization': `Bearer ${storedToken}` } : {}
-        });
+        const opRes = await fetch(opinionUrl.toString());
         const opJson = await opRes.json();
 
         const statuses: Record<string, { sokCount: number; mySokFilled: boolean; riskCount: number; groupTrainingDays: string[] }> = {};

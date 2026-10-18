@@ -134,17 +134,31 @@ export async function GET(req: NextRequest) {
       ? authHeader.split('Bearer ')[1] 
       : searchParams.get('token');
 
-    if (!spreadsheetId || !token) {
-      const schoolData = await getLatestSchoolData(schoolKey || undefined);
-      if (schoolData) {
-        if (!spreadsheetId) spreadsheetId = schoolData.spreadsheetId;
-        if (!token) token = schoolData.serviceAccountKey || schoolData.accessToken || process.env.GOOGLE_SERVICE_ACCOUNT_KEY || null;
-      }
+    const schoolData = await getLatestSchoolData(schoolKey || undefined).catch(() => null);
+    const serverFallbackToken =
+      schoolData?.serviceAccountKey ||
+      schoolData?.accessToken ||
+      process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+      null;
+
+    if (schoolData) {
+      if (!spreadsheetId) spreadsheetId = schoolData.spreadsheetId;
+      if (!token) token = serverFallbackToken;
+    } else if (!token && serverFallbackToken) {
+      token = serverFallbackToken;
     }
 
     if (token && spreadsheetId) {
       try {
-        const rows = await readFromSheet(token, spreadsheetId, 'OkulRisk!A:Z');
+        let rows: any[][] = [];
+        try {
+          rows = await readFromSheet(token, spreadsheetId, 'OkulRisk!A:Z');
+        } catch (readErr) {
+          if (serverFallbackToken && serverFallbackToken !== token) {
+            token = serverFallbackToken;
+            rows = await readFromSheet(serverFallbackToken, spreadsheetId, 'OkulRisk!A:Z').catch(() => []);
+          }
+        }
         if (rows && rows.length > 0) {
           const recordMap = new Map<string, any>();
           for (const row of rows) {
@@ -232,12 +246,18 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Öğrenci numarası zorunludur.' }, { status: 400 });
     }
 
-    if (!spreadsheetId || !accessToken) {
-      const schoolData = await getLatestSchoolData(schoolKey || undefined);
-      if (schoolData) {
-        if (!spreadsheetId) spreadsheetId = schoolData.spreadsheetId;
-        if (!accessToken) accessToken = schoolData.serviceAccountKey || schoolData.accessToken || process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
-      }
+    const schoolData = await getLatestSchoolData(schoolKey || undefined).catch(() => null);
+    const serverFallbackToken =
+      schoolData?.serviceAccountKey ||
+      schoolData?.accessToken ||
+      process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+      '';
+
+    if (schoolData) {
+      if (!spreadsheetId) spreadsheetId = schoolData.spreadsheetId;
+      if (!accessToken) accessToken = serverFallbackToken;
+    } else if (!accessToken && serverFallbackToken) {
+      accessToken = serverFallbackToken;
     }
 
     if (!spreadsheetId || !accessToken) {
@@ -257,12 +277,26 @@ export async function POST(req: NextRequest) {
     try {
       rawRows = await readFromSheet(accessToken, spreadsheetId, 'OkulRisk!A:Z');
     } catch (e: any) {
-      const errMsg = (e?.message || '').toLowerCase();
-      if (errMsg.includes('not found') || errMsg.includes('unable to parse range')) {
-        rawRows = [];
+      if (serverFallbackToken && serverFallbackToken !== accessToken) {
+        accessToken = serverFallbackToken;
+        try {
+          rawRows = await readFromSheet(accessToken, spreadsheetId, 'OkulRisk!A:Z');
+        } catch (retryErr: any) {
+          const errMsg = (retryErr?.message || '').toLowerCase();
+          if (errMsg.includes('not found') || errMsg.includes('unable to parse range')) {
+            rawRows = [];
+          } else {
+            throw new Error('E-Tablo mevcut verileri okunamadı: ' + (retryErr?.message || 'Bağlantı hatası'));
+          }
+        }
       } else {
-        console.error('OkulRisk tablosu okunurken kritik hata:', e);
-        throw new Error('E-Tablo mevcut verileri okunamadı: ' + (e?.message || 'Bağlantı hatası'));
+        const errMsg = (e?.message || '').toLowerCase();
+        if (errMsg.includes('not found') || errMsg.includes('unable to parse range')) {
+          rawRows = [];
+        } else {
+          console.error('OkulRisk tablosu okunurken kritik hata:', e);
+          throw new Error('E-Tablo mevcut verileri okunamadı: ' + (e?.message || 'Bağlantı hatası'));
+        }
       }
     }
 

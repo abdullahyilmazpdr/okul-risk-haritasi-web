@@ -110,6 +110,10 @@ export default function TeacherLoginPage() {
           localStorage.setItem('active_spreadsheet_id', data.teacher.spreadsheetId);
         }
 
+        if (Array.isArray(data.students) && data.students.length > 0 && typeof window !== 'undefined') {
+          localStorage.setItem('school_students', JSON.stringify(data.students));
+        }
+
         if (data.sessionToken && typeof window !== 'undefined') {
           localStorage.setItem('teacher_session_token', data.sessionToken);
         }

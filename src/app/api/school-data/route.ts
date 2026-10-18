@@ -65,14 +65,22 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    const serverFallbackToken =
+      latestSchool?.serviceAccountKey ||
+      latestSchool?.accessToken ||
+      process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+      '';
+
     // 2. Aşama: Eğer token veya spreadsheetId yoksa Firestore'daki okuldan sadece bağlantı bilgilerini çek
     if (latestSchool) {
       if (!spreadsheetId && latestSchool.spreadsheetId) {
         spreadsheetId = latestSchool.spreadsheetId;
       }
       if (!token) {
-        token = latestSchool.serviceAccountKey || latestSchool.accessToken || process.env.GOOGLE_SERVICE_ACCOUNT_KEY || '';
+        token = serverFallbackToken;
       }
+    } else if (!token && serverFallbackToken) {
+      token = serverFallbackToken;
     }
 
     if (!spreadsheetId || !token) {
@@ -81,11 +89,24 @@ export async function GET(req: NextRequest) {
       }, { status: 401 });
     }
 
+    // Yardımcı: İstemciden gelen token süresi dolmuşsa sunucudaki yedek token ile tekrar dene
+    const readSheetSafe = async (range: string) => {
+      try {
+        return await readFromSheet(token, spreadsheetId!, range);
+      } catch (err) {
+        if (serverFallbackToken && serverFallbackToken !== token) {
+          token = serverFallbackToken;
+          return await readFromSheet(serverFallbackToken, spreadsheetId!, range).catch(() => []);
+        }
+        return [];
+      }
+    };
+
     // E-Tablo'dan Öğrenciler, Öğretmenler ve OkulRisk sayfalarını doğrudan oku (Firestore'da öğrenci/öğretmen verisi tutulmaz)
     const [studentRows, teacherRows, evalRows] = await Promise.all([
-      readFromSheet(token, spreadsheetId, 'Öğrenciler!A2:C').catch(() => []),
-      readFromSheet(token, spreadsheetId, 'Öğretmenler!A2:E').catch(() => []),
-      readFromSheet(token, spreadsheetId, 'OkulRisk!A2:B').catch(() => [])
+      readSheetSafe('Öğrenciler!A2:C'),
+      readSheetSafe('Öğretmenler!A2:E'),
+      readSheetSafe('OkulRisk!A2:B')
     ]);
 
     const students = (studentRows || []).map((row: any[]) => ({

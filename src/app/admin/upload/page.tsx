@@ -71,6 +71,37 @@ function generatePasswordClient(): string {
   return pass;
 }
 
+function getClassBaseKeyClient(clsName: string): string {
+  return (clsName || '')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/^ÖE[İI]U\s*-\s*/i, '')
+    .replace(/Sınıf\s*Listesi.*$/i, '')
+    .replace(/İ/g, 'i')
+    .replace(/I/g, 'ı')
+    .replace(/Ç/g, 'ç')
+    .replace(/Ğ/g, 'ğ')
+    .replace(/Ö/g, 'ö')
+    .replace(/Ş/g, 'ş')
+    .replace(/Ü/g, 'ü')
+    .toLowerCase()
+    .replace(/[^a-z0-9çğıöşü]/g, '');
+}
+
+function deduplicateClassesClient(classList: string[]): string[] {
+  const map = new Map<string, string>();
+  for (const raw of classList || []) {
+    const trimmed = (raw || '').trim();
+    if (!trimmed) continue;
+    const key = getClassBaseKeyClient(trimmed);
+    if (!key) continue;
+    const existing = map.get(key);
+    if (!existing || trimmed.length > existing.length) {
+      map.set(key, trimmed);
+    }
+  }
+  return Array.from(map.values());
+}
+
 export default function UploadPage() {
   const router = useRouter();
   const [studentFile, setStudentFile] = useState<File | null>(null);
@@ -364,17 +395,17 @@ export default function UploadPage() {
   }, [activeDisplayData?.students]);
 
   const availableClasses = useMemo(() => {
-    const classSet = new Set<string>(Object.keys(groupedStudents));
+    const rawList: string[] = [...Object.keys(groupedStudents)];
     if (activeDisplayData?.teachers) {
       for (const t of activeDisplayData.teachers) {
         if (Array.isArray(t.classes)) {
           t.classes.forEach((c: string) => {
-            if (c && c.trim()) classSet.add(c.trim());
+            if (c && c.trim()) rawList.push(c.trim());
           });
         }
       }
     }
-    return Array.from(classSet).sort((a, b) => a.localeCompare(b, 'tr'));
+    return deduplicateClassesClient(rawList).sort((a, b) => a.localeCompare(b, 'tr'));
   }, [groupedStudents, activeDisplayData?.teachers]);
 
   const filteredTeachers = useMemo(() => {
@@ -429,7 +460,17 @@ export default function UploadPage() {
 
     setTeacherFormUsername(t.username || generateUsernameClient(t.name || ''));
     setTeacherFormPassword(t.password || generatePasswordClient());
-    setTeacherFormSelectedClasses(Array.isArray(t.classes) ? [...t.classes] : []);
+
+    // Öğretmenin mevcut sınıflarını availableClasses'taki kanonik (tam) isimleriyle eşleştir
+    const rawTeacherClasses: string[] = Array.isArray(t.classes) ? t.classes : [];
+    const mappedClasses = deduplicateClassesClient(
+      rawTeacherClasses.map((tc: string) => {
+        const key = getClassBaseKeyClient(tc);
+        const matchInAvailable = availableClasses.find((ac) => getClassBaseKeyClient(ac) === key);
+        return matchInAvailable || tc;
+      })
+    );
+    setTeacherFormSelectedClasses(mappedClasses);
     setTeacherFormExtraClasses('');
     setAutoUsernameEnabled(false);
     setShowTeacherModal(true);
@@ -443,9 +484,14 @@ export default function UploadPage() {
   };
 
   const toggleTeacherFormClass = (cls: string) => {
-    setTeacherFormSelectedClasses(prev =>
-      prev.includes(cls) ? prev.filter(c => c !== cls) : [...prev, cls]
-    );
+    const targetKey = getClassBaseKeyClient(cls);
+    setTeacherFormSelectedClasses(prev => {
+      const exists = prev.some(c => getClassBaseKeyClient(c) === targetKey);
+      if (exists) {
+        return prev.filter(c => getClassBaseKeyClient(c) !== targetKey);
+      }
+      return [...prev, cls];
+    });
   };
 
   // Manuel Öğretmen Kaydet (Ekle veya Güncelle)
@@ -464,10 +510,10 @@ export default function UploadPage() {
 
       const activeKey = typeof window !== 'undefined' ? localStorage.getItem('admin_active_school_key') : null;
       const schoolData = await getSchoolData(auth.currentUser.uid, activeKey || undefined);
-      const activeToken = localStorage.getItem('google_access_token') || schoolData?.accessToken;
+      const activeToken = localStorage.getItem('google_access_token') || schoolData?.accessToken || '';
 
-      if (!schoolData?.spreadsheetId || !activeToken) {
-        toast.error("Google E-Tablo bağlantısı veya oturum anahtarı eksik. Lütfen yeniden giriş yapınız.");
+      if (!schoolData?.spreadsheetId) {
+        toast.error("Google E-Tablo bağlantısı eksik. Lütfen yeniden giriş yapınız.");
         return;
       }
 
@@ -475,7 +521,7 @@ export default function UploadPage() {
         .split(',')
         .map(c => c.trim())
         .filter(Boolean);
-      const combinedClasses = Array.from(new Set([...teacherFormSelectedClasses, ...extraClasses]));
+      const combinedClasses = deduplicateClassesClient([...teacherFormSelectedClasses, ...extraClasses]);
 
       let finalRoleOrBranch = teacherFormRoleType;
       if (teacherFormBranch.trim()) {
@@ -493,11 +539,12 @@ export default function UploadPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${activeToken}`
+          ...(activeToken ? { 'Authorization': `Bearer ${activeToken}` } : {})
         },
         body: JSON.stringify({
           action: teacherModalMode === 'add' ? 'add' : 'update',
           spreadsheetId: schoolData.spreadsheetId,
+          schoolKey: schoolData.schoolKey || activeKey || '',
           originalUsername: editingOriginalUsername,
           originalName: editingOriginalName,
           existingTeachers: activeDisplayData?.teachers || [],
@@ -884,7 +931,8 @@ export default function UploadPage() {
                 {availableClasses.length > 0 && (
                   <div className="max-h-36 overflow-y-auto p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap gap-1.5 mb-2">
                     {availableClasses.map((cls) => {
-                      const selected = teacherFormSelectedClasses.includes(cls);
+                      const clsKey = getClassBaseKeyClient(cls);
+                      const selected = teacherFormSelectedClasses.some(c => getClassBaseKeyClient(c) === clsKey);
                       return (
                         <button
                           key={cls}
@@ -976,7 +1024,7 @@ export default function UploadPage() {
               Öğrenci Listesi (PDF) Alınışı:
             </p>
             <p className="text-slate-600">
-              <strong>E-Okul Kurum İşlemleri</strong> &gt; <strong>Şube İşlemleri</strong> &gt; <strong>Raporlar</strong> (Yazıcı simgesi) &gt; <strong>Sınıf Listesi (Tümü)</strong> ekranından PDF olarak indiriniz. (Sınıf öğretmenleri ve müdür yardımcıları da buradan okunur).
+              <strong>E-Okul</strong> &gt; <strong>Öğrenci İşlemleri</strong> &gt; <strong>Yazdır</strong> (Yazıcı simgesi) &gt; <strong>Şube Listesi (Öğrenci No Sıralı)</strong> ekranından PDF olarak indiriniz. (Sınıf öğretmenleri ve müdür yardımcıları da buradan okunur).
             </p>
           </div>
 
@@ -986,7 +1034,7 @@ export default function UploadPage() {
               Öğretmen Ders Programı (PDF) Alınışı:
             </p>
             <p className="text-slate-600">
-              <strong>E-Okul</strong> &gt; <strong>Haftalık Ders Programı</strong> &gt; <strong>Raporlar</strong> &gt; <strong>Öğretmen Bazlı Haftalık Ders Programı</strong> raporunu PDF olarak kaydediniz. (Yıl içinde ders programı değiştiğinde tek başına yükleyebilirsiniz).
+              <strong>E-Okul</strong> &gt; <strong>Kurum İşlemleri</strong> &gt; <strong>Ders İşlemleri</strong> &gt; <strong>Ders Öğretmenleri</strong> &gt; <strong>Yazdır</strong> (Yazıcı simgesi) &gt; <strong>Öğretmen Ders Programları</strong> raporunu PDF olarak kaydediniz. (Yıl içinde ders programı değiştiğinde tek başına yükleyebilirsiniz).
             </p>
           </div>
         </div>

@@ -63,7 +63,16 @@ export function getClassBaseKey(clsName: string): string {
     .replace(/\([^)]*\)/g, '')
     .replace(/^ÖE[İI]U\s*-\s*/i, '')
     .replace(/Sınıf\s*Listesi.*$/i, '');
-  return slugifyTr(withoutParens);
+  return withoutParens
+    .replace(/İ/g, 'i')
+    .replace(/I/g, 'ı')
+    .replace(/Ç/g, 'ç')
+    .replace(/Ğ/g, 'ğ')
+    .replace(/Ö/g, 'ö')
+    .replace(/Ş/g, 'ş')
+    .replace(/Ü/g, 'ü')
+    .toLowerCase()
+    .replace(/[^a-z0-9çğıöşü]/g, '');
 }
 
 /**

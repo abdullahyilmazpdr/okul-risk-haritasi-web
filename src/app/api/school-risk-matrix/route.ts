@@ -95,8 +95,20 @@ function extractRecordFromRow(r: any[]) {
 }
 
 function getClassBaseKey(raw: string): string {
-  const withoutParens = (raw || '').replace(/\([^)]*\)/g, ' ');
-  return cleanTr(withoutParens).replace(/[^a-z0-9]/g, '');
+  const withoutParens = (raw || '')
+    .replace(/\([^)]*\)/g, '')
+    .replace(/^ÖE[İI]U\s*-\s*/i, '')
+    .replace(/Sınıf\s*Listesi.*$/i, '');
+  return withoutParens
+    .replace(/İ/g, 'i')
+    .replace(/I/g, 'ı')
+    .replace(/Ç/g, 'ç')
+    .replace(/Ğ/g, 'ğ')
+    .replace(/Ö/g, 'ö')
+    .replace(/Ş/g, 'ş')
+    .replace(/Ü/g, 'ü')
+    .toLowerCase()
+    .replace(/[^a-z0-9çğıöşü]/g, '');
 }
 
 export async function GET(req: NextRequest) {
@@ -110,9 +122,17 @@ export async function GET(req: NextRequest) {
       : searchParams.get('token');
 
     const schoolData = await getLatestSchoolData(schoolKey || undefined);
+    const serverFallbackToken =
+      schoolData?.serviceAccountKey ||
+      schoolData?.accessToken ||
+      process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+      null;
+
     if (schoolData) {
       if (!spreadsheetId) spreadsheetId = schoolData.spreadsheetId;
-      if (!token) token = schoolData.serviceAccountKey || schoolData.accessToken || process.env.GOOGLE_SERVICE_ACCOUNT_KEY || null;
+      if (!token) token = serverFallbackToken;
+    } else if (!token && serverFallbackToken) {
+      token = serverFallbackToken;
     }
 
     let students: Array<{ number: string; name: string; className: string }> = [];
@@ -120,11 +140,23 @@ export async function GET(req: NextRequest) {
     let riskRows: any[][] = [];
 
     if (token && spreadsheetId) {
+      const readSheetSafe = async (range: string) => {
+        try {
+          return await readFromSheet(token!, spreadsheetId!, range);
+        } catch (err) {
+          if (serverFallbackToken && serverFallbackToken !== token) {
+            token = serverFallbackToken;
+            return await readFromSheet(serverFallbackToken, spreadsheetId!, range).catch(() => []);
+          }
+          return [];
+        }
+      };
+
       try {
         const [studentRes, teacherRes, evalRes] = await Promise.all([
-          readFromSheet(token, spreadsheetId, 'Öğrenciler!A2:C').catch(() => []),
-          readFromSheet(token, spreadsheetId, 'Öğretmenler!A2:E').catch(() => []),
-          readFromSheet(token, spreadsheetId, 'OkulRisk!A:Z').catch(() => [])
+          readSheetSafe('Öğrenciler!A2:C'),
+          readSheetSafe('Öğretmenler!A2:E'),
+          readSheetSafe('OkulRisk!A:Z')
         ]);
 
         if (Array.isArray(studentRes) && studentRes.length > 0) {
@@ -245,10 +277,25 @@ export async function GET(req: NextRequest) {
       return classRows.reduce((sum, row) => sum + (row.risks[colIdx] || 0), 0);
     });
 
+    // Risk grubu öğrenci detay listesi (Yönetici detaylı raporlama ekranı için)
+    const riskStudents = students
+      .map(st => {
+        const stRisks = studentRiskMap.get(st.number) || [];
+        return {
+          number: st.number,
+          name: st.name,
+          className: st.className,
+          risks: stRisks
+        };
+      })
+      .filter(st => st.risks.length > 0)
+      .sort((a, b) => b.risks.length - a.risks.length);
+
     return NextResponse.json({
       success: true,
       classRows,
       totals,
+      riskStudents,
       opinions: opinionsList,
       schoolInfo: {
         schoolName: schoolData?.schoolName || '',
@@ -257,7 +304,9 @@ export async function GET(req: NextRequest) {
       },
       stats: {
         totalStudents: students.length,
-        totalTeachers: teachers.length || 14
+        totalTeachers: teachers.length || 14,
+        evaluatedStudentsCount: studentRiskMap.size,
+        riskStudentCount: riskStudents.length
       }
     });
   } catch (error: any) {
