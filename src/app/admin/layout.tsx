@@ -13,16 +13,18 @@ import {
   Settings, 
   LogOut,
   Menu,
-  X
+  X,
+  BookOpen
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const navigation = [
   { name: 'Genel Bakış', href: '/admin', icon: LayoutDashboard },
-  { name: 'Veri Yükleme', href: '/admin/upload', icon: UploadCloud },
+  { name: '1. Okul Tanımlama', href: '/admin/settings', icon: Settings },
+  { name: '2. Veri Yükleme', href: '/admin/upload', icon: UploadCloud },
   { name: 'Risk Haritası', href: '/admin/risk-map', icon: FileSpreadsheet },
   { name: 'ŞÖK Modülü', href: '/admin/sok', icon: Users },
-  { name: 'Ayarlar', href: '/admin/settings', icon: Settings },
+  { name: 'Kullanım Kılavuzu', href: '/rehber?tab=admin', icon: BookOpen },
 ];
 
 function AdminNav() {
@@ -30,7 +32,7 @@ function AdminNav() {
   return (
     <nav className="flex-1 px-4 space-y-1">
       {navigation.map((item) => {
-        const isActive = pathname === item.href;
+        const isActive = pathname === item.href.split('?')[0];
         const Icon = item.icon;
         return (
           <Link
@@ -62,6 +64,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [currentSchoolKey, setCurrentSchoolKey] = useState<string>('');
   const [currentSchoolName, setCurrentSchoolName] = useState<string>('');
   const router = useRouter();
+  const pathname = usePathname();
 
   useSessionTimeout({
     sessionKey: 'admin_session',
@@ -90,7 +93,9 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
       // Kullanıcının kayıtlı okullarını çek
       try {
-        const list = await getSchoolsByAdmin(user.uid);
+        const list = (await getSchoolsByAdmin(user.uid)).filter(
+          (s: any) => s.schoolKey && s.schoolKey !== 'DEFAULT'
+        );
         setSchools(list);
         
         const activeKey = localStorage.getItem('admin_active_school_key');
@@ -108,6 +113,21 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           } else {
             localStorage.removeItem('active_spreadsheet_id');
           }
+        } else {
+          // Henüz hiç okul tanımlanmamışsa (İlk kez giriş yapan yönetici):
+          // İlk adım MEBBİS Kodu ile Okul Tanımlama olduğu için doğrudan /admin/settings sayfasına yönlendir
+          setCurrentSchoolKey('');
+          setCurrentSchoolName('');
+          localStorage.removeItem('admin_active_school_key');
+          localStorage.removeItem('active_spreadsheet_id');
+          if (pathname && pathname !== '/admin/settings') {
+            toast("İlk adım olarak lütfen okulunuzun MEBBİS Kurum Kodunu ve adını tanımlayın.", {
+              id: 'first-step-school-guide',
+              icon: '🏫',
+              duration: 4000
+            });
+            router.push('/admin/settings');
+          }
         }
 
         // Eski yönetici ise, devredilen okulları için bildirim var mı kontrol et
@@ -121,7 +141,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     });
 
     return () => unsubscribe();
-  }, [router]);
+  }, [router, pathname]);
 
   const handleSelectSchool = (newKey: string) => {
     if (newKey === '__add_new__') {

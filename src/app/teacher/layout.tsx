@@ -8,13 +8,15 @@ import {
   LogOut,
   Menu,
   X,
-  UserCheck
+  UserCheck,
+  HelpCircle
 } from 'lucide-react';
 import { useSessionTimeout } from '@/lib/useSessionTimeout';
 
 const navigation = [
   { name: 'Sınıflarım', href: '/teacher', icon: BookOpen },
   { name: 'Profilim', href: '/teacher/profile', icon: UserCheck },
+  { name: 'Kullanım Kılavuzu', href: '/rehber?tab=teacher', icon: HelpCircle },
 ];
 
 function TeacherNav() {
@@ -22,7 +24,8 @@ function TeacherNav() {
   return (
     <nav className="flex-1 px-4 space-y-1">
       {navigation.map((item) => {
-        const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
+        const cleanHref = item.href.split('?')[0];
+        const isActive = pathname === cleanHref || (cleanHref !== '/teacher' && pathname?.startsWith(cleanHref + '/'));
         const Icon = item.icon;
         return (
           <Link

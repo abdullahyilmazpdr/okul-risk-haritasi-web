@@ -32,12 +32,15 @@ export default function LoginPage() {
       
       if (token) {
         localStorage.setItem('google_access_token', token);
-        
-        // Yöneticinin kayıtlı okullarının tokenlarını güncelle
-        if (result.user) {
-          const userSchools = await getSchoolsByAdmin(result.user.uid);
-          for (const s of userSchools) {
-            if (s.schoolKey) {
+      }
+
+      let hasDefinedSchool = false;
+      if (result.user) {
+        const userSchools = await getSchoolsByAdmin(result.user.uid);
+        for (const s of userSchools) {
+          if (s.schoolKey && s.schoolKey !== 'DEFAULT') {
+            hasDefinedSchool = true;
+            if (token) {
               await saveSchoolData(result.user.uid, {
                 schoolKey: s.schoolKey,
                 schoolName: s.schoolName,
@@ -52,13 +55,21 @@ export default function LoginPage() {
       }
 
       toast.dismiss(loginToast);
-      toast.success("Giriş başarılı! Yönetim paneline aktarılıyorsunuz...", {
-        duration: 2500
-      });
-      
-      setTimeout(() => {
-        router.push('/admin');
-      }, 500);
+      if (hasDefinedSchool) {
+        toast.success("Giriş başarılı! Yönetim paneline aktarılıyorsunuz...", {
+          duration: 2500
+        });
+        setTimeout(() => {
+          router.push('/admin');
+        }, 500);
+      } else {
+        toast.success("Hoş geldiniz! 1. Adım olarak lütfen okulunuzun MEBBİS Kurum Kodunu tanımlayın.", {
+          duration: 4000
+        });
+        setTimeout(() => {
+          router.push('/admin/settings');
+        }, 500);
+      }
     } catch (err: any) {
       console.error(err);
       toast.dismiss(loginToast);

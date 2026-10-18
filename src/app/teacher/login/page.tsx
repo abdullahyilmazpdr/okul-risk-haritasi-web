@@ -263,11 +263,19 @@ export default function TeacherLoginPage() {
           </form>
         )}
 
-        <div className="mt-6 pt-6 border-t border-indigo-500/20 text-center space-y-2">
+        <div className="mt-6 pt-6 border-t border-indigo-500/20 text-center space-y-2.5">
           <p className="text-xs text-indigo-200/80">
             * Giriş bilgileriniz okul yöneticiniz tarafından WhatsApp ile iletilmiştir.
           </p>
-          <div className="flex items-center justify-center gap-4 pt-2 text-xs text-indigo-200">
+          <div>
+            <Link
+              href="/rehber?tab=teacher"
+              className="inline-flex items-center gap-1.5 text-xs font-bold bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/30 text-indigo-100 px-3.5 py-2 rounded-xl transition-colors"
+            >
+              📖 Nasıl Kullanılır? (4 Adımda Görsel Öğretmen Rehberi)
+            </Link>
+          </div>
+          <div className="flex items-center justify-center gap-4 pt-1 text-xs text-indigo-200">
             <Link href="/login" className="hover:text-white underline underline-offset-2">
               Yönetici Girişi
             </Link>

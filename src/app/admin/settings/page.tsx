@@ -265,16 +265,86 @@ function AdminSettingsContent() {
     }
   };
 
+  const isStep1Completed = Boolean(schoolKey.trim() && schoolKey.trim() !== 'DEFAULT' && schoolName.trim());
+  const isStep2Completed = Boolean(spreadsheetId);
+
   return (
     <div className="max-w-4xl mx-auto space-y-6">
+      {/* 3 Adımlı Kurulum Yol Haritası */}
+      <div className="bg-gradient-to-r from-blue-900 via-indigo-900 to-slate-900 text-white p-5 rounded-2xl shadow-md border border-indigo-800/60">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+          <div>
+            <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-300 bg-indigo-500/20 px-2.5 py-0.5 rounded-full">
+              Kurulum Sırası
+            </span>
+            <h2 className="text-base font-bold text-white mt-1">
+              Okul Kurulum Adımları (1 → 2 → 3)
+            </h2>
+          </div>
+          <a
+            href="/rehber"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-xs font-semibold bg-white/10 hover:bg-white/20 text-indigo-100 px-3.5 py-2 rounded-xl transition-colors inline-flex items-center gap-1.5 self-start sm:self-auto"
+          >
+            📖 Görsel Kurulum & Kullanım Kılavuzu (PDF)
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
+          <div className={`p-3 rounded-xl border flex items-center gap-3 ${
+            isStep1Completed
+              ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-100'
+              : 'bg-white/15 border-white/30 text-white ring-2 ring-amber-400'
+          }`}>
+            <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold shrink-0 ${
+              isStep1Completed ? 'bg-emerald-500 text-white' : 'bg-amber-400 text-slate-950'
+            }`}>
+              {isStep1Completed ? '✓' : '1'}
+            </div>
+            <div>
+              <div className="font-bold">1. Okul Tanımlama</div>
+              <div className="text-[11px] opacity-80">MEBBİS Kodu & Okul Adı (Bu Ekran)</div>
+            </div>
+          </div>
+
+          <div className={`p-3 rounded-xl border flex items-center gap-3 ${
+            isStep2Completed
+              ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-100'
+              : 'bg-white/5 border-white/15 text-slate-300'
+          }`}>
+            <div className={`w-7 h-7 rounded-full flex items-center justify-center font-bold shrink-0 ${
+              isStep2Completed ? 'bg-emerald-500 text-white' : 'bg-slate-700 text-slate-200'
+            }`}>
+              {isStep2Completed ? '✓' : '2'}
+            </div>
+            <div>
+              <div className="font-bold">2. E-Tablo Oluşturma</div>
+              <div className="text-[11px] opacity-80">Genel Bakış Ekranında Tek Tıkla</div>
+            </div>
+          </div>
+
+          <div className="p-3 rounded-xl border bg-white/5 border-white/15 text-slate-300 flex items-center gap-3">
+            <div className="w-7 h-7 rounded-full bg-slate-700 text-slate-200 flex items-center justify-center font-bold shrink-0">
+              3
+            </div>
+            <div>
+              <div className="font-bold">3. PDF Veri Yükleme</div>
+              <div className="text-[11px] opacity-80">Sınıf Listesi & Ders Programı</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div>
         <h1 className="text-2xl font-bold text-slate-900">
-          {isNewSchoolMode ? 'Yeni Okul Tanımla' : 'Sistem Ayarları'}
+          {isNewSchoolMode ? '1. Adım: Yeni Okul Tanımla' : 'Sistem Ayarları ve Okul Tanımlama'}
         </h1>
         <p className="text-slate-500 mt-1">
           {isNewSchoolMode 
             ? 'Aynı bina veya kampüsteki farklı kademe / okul için yeni kayıt oluşturun (Örn: I., II. veya III. Kademe).'
-            : 'Okul künye bilgileri, MEBBİS Kurum Kodu ve E-Tablo veritabanı yapılandırması.'}
+            : 'İlk adım olarak okulunuzun 6 haneli MEBBİS Kurum Kodunu ve Okul Adını kaydedin.'}
         </p>
       </div>
 
@@ -286,7 +356,7 @@ function AdminSettingsContent() {
               <School className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">Okul Künyesi</h2>
+              <h2 className="text-lg font-bold text-slate-900">1. Adım: Okul Künyesi (Zorunlu İlk Adım)</h2>
               <p className="text-xs text-slate-400">MEBBİS Kurum Kodu öğretmenlerin doğru okula giriş yapmasını sağlar</p>
             </div>
           </div>
@@ -294,7 +364,7 @@ function AdminSettingsContent() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
-                <span className="text-red-500 font-bold">*</span> MEBBİS Kurum Kodu (Zorunlu)
+                <span className="text-red-500 font-bold">*</span> MEBBİS Kurum Kodu (6 Haneli - Zorunlu)
               </label>
               <input 
                 type="text"
@@ -304,7 +374,7 @@ function AdminSettingsContent() {
                 required
                 className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono focus:ring-2 focus:ring-blue-500 focus:outline-none"
               />
-              <p className="text-[11px] text-slate-400 mt-1">Öğretmenler bu kod ile oturum açacaktır.</p>
+              <p className="text-[11px] text-slate-400 mt-1">Öğretmenler bu 6 haneli kod ile oturum açacaktır.</p>
             </div>
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5">
@@ -344,37 +414,49 @@ function AdminSettingsContent() {
         {/* E-Tablo Veritabanı Bilgileri */}
         <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
           <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-            <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl">
+            <div className={`p-2.5 rounded-xl ${spreadsheetId ? 'bg-emerald-50 text-emerald-600' : 'bg-amber-50 text-amber-600'}`}>
               <Database className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-slate-900">Google E-Tablo Veritabanı</h2>
+              <h2 className="text-lg font-bold text-slate-900">2. Adım Durumu: Google E-Tablo Veritabanı</h2>
               <p className="text-xs text-slate-400">Verilerin saklandığı aktif Google Drive tablosu</p>
             </div>
           </div>
 
           <div className="space-y-4 pt-2">
-            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <CheckCircle2 className="w-6 h-6 text-emerald-600 flex-shrink-0" />
-                <div>
-                  <p className="text-sm font-bold text-emerald-900">Bağlı ve Senkronize E-Tablo</p>
-                  <p className="text-xs text-emerald-700 font-mono mt-0.5">
-                    ID: {spreadsheetId || 'Kayıtlı E-Tablo aktif'}
+            {spreadsheetId ? (
+              <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-4 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <CheckCircle2 className="w-6 h-6 text-emerald-600 flex-shrink-0" />
+                  <div>
+                    <p className="text-sm font-bold text-emerald-900">Bağlı ve Senkronize E-Tablo</p>
+                    <p className="text-xs text-emerald-700 font-mono mt-0.5">
+                      ID: {spreadsheetId}
+                    </p>
+                  </div>
+                </div>
+                {spreadsheetUrl && (
+                  <a 
+                    href={spreadsheetUrl} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-lg flex items-center gap-1.5 transition-colors"
+                  >
+                    Tabloyu Aç <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                )}
+              </div>
+            ) : (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="text-xs text-amber-900 space-y-1">
+                  <p className="font-bold text-sm">Henüz E-Tablo Oluşturulmadı (2. Adım Bekleniyor)</p>
+                  <p className="text-amber-800 leading-relaxed">
+                    Önce yukarıdaki <strong>MEBBİS Kurum Kodu</strong> ve <strong>Okul Adı</strong> alanlarını doldurup aşağıdaki <strong>&ldquo;1. Adımı Kaydet ve Devam Et&rdquo;</strong> butonuna basınız. Ardından açılacak Genel Bakış ekranında <strong>2. Adım: E-Tablo Oluştur</strong> butonuna tıklayarak tablonuzu oluşturabilirsiniz.
                   </p>
                 </div>
               </div>
-              {spreadsheetUrl && (
-                <a 
-                  href={spreadsheetUrl} 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-lg flex items-center gap-1.5 transition-colors"
-                >
-                  Tabloyu Aç <ExternalLink className="w-3.5 h-3.5" />
-                </a>
-              )}
-            </div>
+            )}
           </div>
         </div>
 
@@ -445,7 +527,11 @@ function AdminSettingsContent() {
             className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold py-3 px-8 rounded-xl flex items-center gap-2 transition-colors shadow-sm"
           >
             <Save className="w-4 h-4" />
-            {isSaving ? 'Kaydediliyor...' : 'Değişiklikleri Kaydet'}
+            {isSaving
+              ? 'Kaydediliyor...'
+              : (!spreadsheetId || isNewSchoolMode)
+                ? '1. Adımı Kaydet ve E-Tablo Oluşturmaya Geç →'
+                : 'Değişiklikleri Kaydet'}
           </button>
         </div>
       </form>

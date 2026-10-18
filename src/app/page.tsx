@@ -29,7 +29,14 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Link
+              href="/rehber"
+              className="text-xs font-semibold text-indigo-300 hover:text-white px-3 py-2 rounded-lg hover:bg-slate-800 transition-colors hidden sm:inline-flex items-center gap-1.5"
+            >
+              <BookOpen className="w-3.5 h-3.5" />
+              Kullanım Kılavuzu (PDF)
+            </Link>
             <Link 
               href="/teacher/login"
               className="text-xs font-semibold text-slate-300 hover:text-white px-3.5 py-2 rounded-lg hover:bg-slate-800 transition-colors"
@@ -65,7 +72,7 @@ export default function HomePage() {
         </div>
 
         {/* Giriş Butonları */}
-        <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+        <div className="flex flex-col sm:flex-row flex-wrap items-center justify-center gap-4">
           <Link
             href="/login"
             className="w-full sm:w-auto px-8 py-3.5 bg-indigo-600 hover:bg-indigo-500 text-white font-bold rounded-2xl transition-all shadow-lg shadow-indigo-600/30 flex items-center justify-center gap-2 text-sm"
@@ -79,6 +86,12 @@ export default function HomePage() {
           >
             <BookOpen className="w-4 h-4" />
             Öğretmen Girişi (Kullanıcı Adı & Şifre)
+          </Link>
+          <Link
+            href="/rehber"
+            className="w-full sm:w-auto px-6 py-3.5 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 hover:text-emerald-200 font-bold rounded-2xl transition-all border border-emerald-500/30 flex items-center justify-center gap-2 text-sm"
+          >
+            📖 Görsel Kullanım Kılavuzu & İnfografik (PDF)
           </Link>
         </div>
 
