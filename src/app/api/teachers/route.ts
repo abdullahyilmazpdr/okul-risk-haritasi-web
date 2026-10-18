@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { readFromSheet, updateSheetRange, clearSheetRange, ensureSheetExists } from '@/lib/sheets';
 import { getLatestSchoolData } from '@/lib/db';
+import { verifyTeacherToken } from '@/lib/session-token';
 import {
   generateUsername,
   generatePassword,
@@ -15,12 +16,15 @@ function normalizeKey(str: string): string {
 
 export async function POST(req: NextRequest) {
   try {
-    let accessToken = req.headers.get('Authorization')?.split('Bearer ')[1] || '';
+    const headerToken = req.headers.get('Authorization')?.split('Bearer ')[1]?.trim() || '';
+    let accessToken = headerToken;
     const body = await req.json();
     const {
       action,
       spreadsheetId: bodySpreadsheetId,
       schoolKey,
+      adminUid,
+      sessionToken,
       teacher,
       originalUsername,
       originalName,
@@ -34,6 +38,44 @@ export async function POST(req: NextRequest) {
       latestSchool = await getLatestSchoolData(schoolKey || undefined);
     } catch (e) {
       console.warn('Okul bağlantı bilgisi alınamadı:', e);
+    }
+
+    const isAuthorizedAdmin = Boolean(
+      headerToken ||
+      (adminUid && latestSchool?.adminUid && adminUid === latestSchool.adminUid)
+    );
+
+    if (action === 'change-password') {
+      const verifiedResult = sessionToken ? verifyTeacherToken(String(sessionToken)) : null;
+      const verifiedPayload = verifiedResult?.valid ? verifiedResult.payload : null;
+      if (!isAuthorizedAdmin && !verifiedPayload) {
+        return NextResponse.json(
+          { error: 'Oturum doğrulanamadı veya süresi doldu. Lütfen tekrar öğretmen girişi yapınız.' },
+          { status: 401 }
+        );
+      }
+      if (!isAuthorizedAdmin && verifiedPayload) {
+        const reqUserKey = normalizeKey(originalUsername || teacher?.username || '');
+        const reqNameKey = normalizeKey(originalName || teacher?.name || '');
+        const tokenUserKey = normalizeKey(verifiedPayload.username || '');
+        const tokenNameKey = normalizeKey(verifiedPayload.name || '');
+        const isSelf =
+          (reqUserKey && tokenUserKey && reqUserKey === tokenUserKey) ||
+          (reqNameKey && tokenNameKey && reqNameKey === tokenNameKey);
+        if (!isSelf) {
+          return NextResponse.json(
+            { error: 'Yalnızca kendi öğretmen hesabınızın şifresini değiştirebilirsiniz.' },
+            { status: 403 }
+          );
+        }
+      }
+    } else if (action === 'add' || action === 'update' || action === 'delete') {
+      if (!isAuthorizedAdmin) {
+        return NextResponse.json(
+          { error: 'Bu işlem için okul yöneticisi yetkisi gereklidir. Lütfen yönetici girişi yapınız.' },
+          { status: 403 }
+        );
+      }
     }
 
     const serverFallbackToken =

@@ -12,6 +12,7 @@ import {
   getClassBaseKey
 } from '@/lib/pdf-parser';
 import { updateSheetRange, readFromSheet, ensureSheetExists } from '@/lib/sheets';
+import { getLatestSchoolData } from '@/lib/db';
 
 function normalizeTeacherKey(name: string): string {
   return slugifyTr(name || '').replace(/[^a-z0-9]/g, '');
@@ -24,9 +25,39 @@ export async function POST(req: NextRequest) {
     const scheduleFile = formData.get('scheduleFile') as File | null;
     const regeneratePasswords = formData.get('regeneratePasswords') === 'true';
     const existingTeachersJson = formData.get('existingTeachersJson') as string | null;
+    const schoolKey = (formData.get('schoolKey') as string | null) || '';
+    const adminUid = (formData.get('adminUid') as string | null) || '';
 
-    const spreadsheetId = formData.get('spreadsheetId') as string | null;
-    const accessToken = req.headers.get('Authorization')?.split('Bearer ')[1];
+    let spreadsheetId = (formData.get('spreadsheetId') as string | null) || '';
+    const headerToken = req.headers.get('Authorization')?.split('Bearer ')[1]?.trim() || '';
+
+    let latestSchool: any = null;
+    try {
+      latestSchool = await getLatestSchoolData(schoolKey || undefined);
+    } catch (e) {}
+
+    const isAuthorizedAdmin = Boolean(
+      headerToken ||
+      (adminUid && latestSchool?.adminUid && adminUid === latestSchool.adminUid)
+    );
+
+    if (!isAuthorizedAdmin) {
+      return NextResponse.json(
+        { error: 'Bu işlem için okul yöneticisi oturumu gereklidir.' },
+        { status: 403 }
+      );
+    }
+
+    const serverFallbackToken =
+      latestSchool?.serviceAccountKey ||
+      latestSchool?.accessToken ||
+      process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+      '';
+
+    if (!spreadsheetId && latestSchool?.spreadsheetId) {
+      spreadsheetId = latestSchool.spreadsheetId;
+    }
+    const accessToken = headerToken || serverFallbackToken;
 
     if ((!studentFile && !scheduleFile) || !spreadsheetId || !accessToken) {
       return NextResponse.json(

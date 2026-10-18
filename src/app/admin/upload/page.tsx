@@ -170,17 +170,13 @@ export default function UploadPage() {
         return;
       }
 
-      const activeToken = localStorage.getItem('google_access_token') || schoolData.accessToken;
-      if (!activeToken) {
-        setIsLoadingExisting(false);
-        return;
-      }
+      const activeToken = localStorage.getItem('google_access_token') || schoolData.accessToken || '';
 
       const res = await fetch(
-        `/api/school-data?spreadsheetId=${schoolData.spreadsheetId}&schoolKey=${encodeURIComponent(schoolData.schoolKey || activeKey || '')}&includePasswords=true`,
+        `/api/school-data?spreadsheetId=${schoolData.spreadsheetId}&schoolKey=${encodeURIComponent(schoolData.schoolKey || activeKey || '')}&adminUid=${encodeURIComponent(user.uid)}&includePasswords=true`,
         {
           headers: {
-            'Authorization': `Bearer ${activeToken}`
+            ...(activeToken ? { 'Authorization': `Bearer ${activeToken}` } : {})
           }
         }
       );
@@ -278,17 +274,7 @@ export default function UploadPage() {
         return;
       }
 
-      const activeToken = localStorage.getItem('google_access_token') || schoolData.accessToken;
-      if (!activeToken) {
-        toast.dismiss(loadingToast);
-        toast.error("Oturum süreniz dolmuştur. Lütfen tekrar giriş yapın.", {
-          duration: 3000,
-          icon: '⏳'
-        });
-        setTimeout(() => router.push('/login'), 1500);
-        setIsUploading(false);
-        return;
-      }
+      const activeToken = localStorage.getItem('google_access_token') || schoolData.accessToken || '';
 
       const currentTeachers = (results || existingData)?.teachers || [];
 
@@ -297,6 +283,7 @@ export default function UploadPage() {
       if (scheduleFile) formData.append('scheduleFile', scheduleFile);
       formData.append('spreadsheetId', schoolData.spreadsheetId);
       formData.append('schoolKey', schoolData.schoolKey || activeKey || '');
+      formData.append('adminUid', auth.currentUser.uid);
       formData.append('regeneratePasswords', regeneratePasswords ? 'true' : 'false');
       if (currentTeachers.length > 0) {
         formData.append('existingTeachersJson', JSON.stringify(currentTeachers));
@@ -308,7 +295,7 @@ export default function UploadPage() {
       const res = await fetch('/api/parse-upload', {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${activeToken}`
+          ...(activeToken ? { 'Authorization': `Bearer ${activeToken}` } : {})
         },
         body: formData
       });
@@ -545,6 +532,7 @@ export default function UploadPage() {
           action: teacherModalMode === 'add' ? 'add' : 'update',
           spreadsheetId: schoolData.spreadsheetId,
           schoolKey: schoolData.schoolKey || activeKey || '',
+          adminUid: auth.currentUser.uid,
           originalUsername: editingOriginalUsername,
           originalName: editingOriginalName,
           existingTeachers: activeDisplayData?.teachers || [],
@@ -602,9 +590,9 @@ export default function UploadPage() {
 
       const activeKey = typeof window !== 'undefined' ? localStorage.getItem('admin_active_school_key') : null;
       const schoolData = await getSchoolData(auth.currentUser.uid, activeKey || undefined);
-      const activeToken = localStorage.getItem('google_access_token') || schoolData?.accessToken;
+      const activeToken = localStorage.getItem('google_access_token') || schoolData?.accessToken || '';
 
-      if (!schoolData?.spreadsheetId || !activeToken) {
+      if (!schoolData?.spreadsheetId) {
         toast.dismiss(loadingToast);
         toast.error("Google E-Tablo bağlantısı eksik.");
         return;
@@ -614,11 +602,13 @@ export default function UploadPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${activeToken}`
+          ...(activeToken ? { 'Authorization': `Bearer ${activeToken}` } : {})
         },
         body: JSON.stringify({
           action: 'delete',
           spreadsheetId: schoolData.spreadsheetId,
+          schoolKey: schoolData.schoolKey || activeKey || '',
+          adminUid: auth.currentUser.uid,
           originalUsername: t.username,
           originalName: t.name,
           existingTeachers: activeDisplayData?.teachers || []

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
+import crypto from 'crypto';
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit';
+import { saveTransferVerificationCode } from '@/lib/db';
 
 export async function POST(req: NextRequest) {
   try {
@@ -9,11 +11,23 @@ export async function POST(req: NextRequest) {
       return rateLimitResponse(rateCheck.retryAfter);
     }
 
-    const { schoolKey, schoolName, targetEmail, code } = await req.json();
+    const { schoolKey, schoolName, newAdminUid, newAdminEmail } = await req.json();
+    const cleanKey = String(schoolKey || '').trim();
 
-    if (!schoolKey || !targetEmail || !code) {
-      return NextResponse.json({ error: 'Eksik parametre.' }, { status: 400 });
+    if (!/^\d{6}$/.test(cleanKey) || !newAdminUid) {
+      return NextResponse.json({ error: 'Geçersiz kurum kodu veya yönetici oturumu.' }, { status: 400 });
     }
+
+    // Güvenlik: Onay kodu ve hedef e-posta adresi yalnızca sunucu tarafında oluşturulur
+    const targetEmail = `${cleanKey}@meb.k12.tr`;
+    const code = String(crypto.randomInt(100000, 1000000));
+
+    await saveTransferVerificationCode(
+      cleanKey,
+      code,
+      String(newAdminUid).trim(),
+      String(newAdminEmail || '').trim()
+    );
 
     const resendApiKey = process.env.RESEND_API_KEY;
 

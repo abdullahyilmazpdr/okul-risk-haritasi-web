@@ -323,7 +323,15 @@ export async function POST(req: NextRequest) {
       const schoolData = await getLatestSchoolData(schoolKey || undefined);
       if (schoolData) {
         if (!spreadsheetId) spreadsheetId = schoolData.spreadsheetId;
-        if (!accessToken) accessToken = schoolData.serviceAccountKey || schoolData.accessToken;
+        if (!accessToken) {
+          accessToken =
+            schoolData.serviceAccountKey ||
+            schoolData.accessToken ||
+            process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+            '';
+        }
+      } else if (!accessToken && process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
+        accessToken = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
       }
     }
 

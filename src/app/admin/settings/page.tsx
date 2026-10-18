@@ -23,7 +23,6 @@ import {
   saveSchoolData, 
   getSchoolsByAdmin, 
   checkSchoolKeyOwnership, 
-  saveTransferVerificationCode, 
   verifyAndExecuteTransfer 
 } from '@/lib/db';
 
@@ -160,27 +159,17 @@ function AdminSettingsContent() {
     setIsSendingCode(true);
     const toastId = toast.loading('Resmi MEB e-posta adresine onay kodu gönderiliyor...');
     try {
-      // 6 haneli rastgele kod üret
-      const code = String(Math.floor(100000 + Math.random() * 900000));
       const targetEmail = `${transferSchoolKey}@meb.k12.tr`;
 
-      // 1. Kodu veritabanına kaydet
-      await saveTransferVerificationCode(
-        transferSchoolKey,
-        code,
-        auth.currentUser.uid,
-        auth.currentUser.email || ''
-      );
-
-      // 2. E-posta gönderim API'sini çağır
+      // E-posta gönderim ve sunucu taraflı doğrulama kodu üretimi API'sini çağır
       const res = await fetch('/api/send-transfer-code', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           schoolKey: transferSchoolKey,
           schoolName: transferSchoolName,
-          targetEmail,
-          code
+          newAdminUid: auth.currentUser.uid,
+          newAdminEmail: auth.currentUser.email || ''
         })
       });
 

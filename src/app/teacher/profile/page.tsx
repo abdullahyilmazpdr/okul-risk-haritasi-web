@@ -83,6 +83,7 @@ export default function TeacherProfilePage() {
     try {
       const storedSpreadsheetId = localStorage.getItem('active_spreadsheet_id') || teacher?.spreadsheetId || '';
       const storedToken = localStorage.getItem('google_access_token') || '';
+      const sessionToken = localStorage.getItem('teacher_session_token') || teacher?.sessionToken || '';
       const schoolKey = teacher?.schoolKey || localStorage.getItem('last_school_key') || '';
 
       const res = await fetch('/api/teachers', {
@@ -95,6 +96,7 @@ export default function TeacherProfilePage() {
           action: 'change-password',
           spreadsheetId: storedSpreadsheetId,
           schoolKey,
+          sessionToken,
           originalUsername: teacher?.username || '',
           originalName: teacher?.name || '',
           newPassword: cleanPass

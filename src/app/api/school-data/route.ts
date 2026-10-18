@@ -12,18 +12,27 @@ export async function GET(req: NextRequest) {
       return rateLimitResponse(rateCheck.retryAfter);
     }
     const authHeader = req.headers.get('Authorization');
-    let token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split('Bearer ')[1] : '';
+    const headerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split('Bearer ')[1].trim() : '';
+    let token = headerToken;
     const { searchParams } = new URL(req.url);
     let spreadsheetId = searchParams.get('spreadsheetId');
     const schoolKey = searchParams.get('schoolKey');
+    const adminUid = searchParams.get('adminUid');
 
     const verifyOnly = searchParams.get('verifyOnly') === 'true';
-    const includePasswords = searchParams.get('includePasswords') === 'true';
+    const requestedIncludePasswords = searchParams.get('includePasswords') === 'true';
 
     let latestSchool: any = null;
     try {
       latestSchool = await getLatestSchoolData(schoolKey || undefined);
     } catch (e) {}
+
+    // Güvenlik Kontrolü: Öğretmen şifreleri ve WhatsApp bağlantılarını yalnızca doğrulanmış okul yöneticisi görebilir
+    const isAuthorizedAdmin = Boolean(
+      headerToken ||
+      (adminUid && latestSchool?.adminUid && adminUid === latestSchool.adminUid)
+    );
+    const includePasswords = requestedIncludePasswords && isAuthorizedAdmin;
 
     // 1. Aşama: Eğer sadece okul kodu doğrulaması yapılıyorsa (Öğretmen giriş ekranı 1. Adım),
     // Okulun veritabanında var olması yeterlidir, Google OAuth tokenına ihtiyaç duyulmaz.
@@ -215,6 +224,9 @@ export async function GET(req: NextRequest) {
       }
     });
   } catch (error: any) {
+    if (error?.digest === 'NEXT_PRERENDER_INTERRUPTED') {
+      throw error;
+    }
     console.error('Veri getirme hatası:', error);
     return NextResponse.json(
       { error: error.message || 'E-Tablo verileri okunurken bir hata meydana geldi.' },
