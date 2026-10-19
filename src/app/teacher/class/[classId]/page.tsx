@@ -81,27 +81,49 @@ function ClassDetailsContent() {
     const distinctSchoolClasses = deduplicateClassesClient(allParsedStudents.map((s: any) => s.className).filter(Boolean));
     const teacherClasses: string[] = Array.isArray(currentTeacher?.classes) ? currentTeacher.classes : [];
 
+    const isManager = Boolean(
+      currentTeacher?.isAdmin ||
+      currentTeacher?.role?.toLowerCase().includes('müdür') ||
+      currentTeacher?.role?.toLowerCase().includes('idare')
+    );
+
     // ÖNCELİK 1: Doğrudan baseKey eşleşmesi (Örn: "9a" -> "ÖEİU - 9/A" veya "9/A")
-    // Önce öğretmenin sınıflarında ara, yoksa okuldaki tüm sınıflarda ara
-    let matchedClass = teacherClasses.find(c => getClassBaseKeyClient(c) === targetBaseKey);
-    if (!matchedClass) {
+    // İdareci / Müdür Yardımcısı için öncelikle tüm okul sınıflarında ara
+    let matchedClass: string | undefined = undefined;
+    if (isManager) {
       matchedClass = distinctSchoolClasses.find(c => getClassBaseKeyClient(c) === targetBaseKey);
+      if (!matchedClass) {
+        matchedClass = teacherClasses.find(c => getClassBaseKeyClient(c) === targetBaseKey);
+      }
+    } else {
+      matchedClass = teacherClasses.find(c => getClassBaseKeyClient(c) === targetBaseKey);
+      if (!matchedClass) {
+        matchedClass = distinctSchoolClasses.find(c => getClassBaseKeyClient(c) === targetBaseKey);
+      }
     }
 
     // ÖNCELİK 2: Metin/İsim eşleşmesi (Tam eşitlik veya includes)
     if (!matchedClass) {
       const lowerDecoded = decodedClassId.toLowerCase();
-      matchedClass = teacherClasses.find(c => c.toLowerCase().trim() === lowerDecoded || c.toLowerCase().includes(lowerDecoded));
-    }
-    if (!matchedClass) {
-      const lowerDecoded = decodedClassId.toLowerCase();
-      matchedClass = distinctSchoolClasses.find(c => c.toLowerCase().trim() === lowerDecoded || c.toLowerCase().includes(lowerDecoded));
+      if (isManager) {
+        matchedClass = distinctSchoolClasses.find(c => c.toLowerCase().trim() === lowerDecoded || c.toLowerCase().includes(lowerDecoded));
+        if (!matchedClass) {
+          matchedClass = teacherClasses.find(c => c.toLowerCase().trim() === lowerDecoded || c.toLowerCase().includes(lowerDecoded));
+        }
+      } else {
+        matchedClass = teacherClasses.find(c => c.toLowerCase().trim() === lowerDecoded || c.toLowerCase().includes(lowerDecoded));
+        if (!matchedClass) {
+          matchedClass = distinctSchoolClasses.find(c => c.toLowerCase().trim() === lowerDecoded || c.toLowerCase().includes(lowerDecoded));
+        }
+      }
     }
 
     // ÖNCELİK 3: Sayısal İndeks (Yalnızca parametre TAMAMEN rakamlardan oluşuyorsa, örn: "1", "2")
     if (!matchedClass && /^\d+$/.test(decodedClassId)) {
       const numericIndex = parseInt(decodedClassId, 10);
-      if (teacherClasses.length > 0 && numericIndex >= 1 && numericIndex <= teacherClasses.length) {
+      if (isManager && distinctSchoolClasses.length > 0 && numericIndex >= 1 && numericIndex <= distinctSchoolClasses.length) {
+        matchedClass = distinctSchoolClasses[numericIndex - 1];
+      } else if (teacherClasses.length > 0 && numericIndex >= 1 && numericIndex <= teacherClasses.length) {
         matchedClass = teacherClasses[numericIndex - 1];
       } else if (distinctSchoolClasses.length > 0 && numericIndex >= 1 && numericIndex <= distinctSchoolClasses.length) {
         matchedClass = distinctSchoolClasses[numericIndex - 1];
@@ -167,9 +189,11 @@ function ClassDetailsContent() {
             localStorage.setItem('school_students', JSON.stringify(schoolJson.data.students));
             
             const freshDistinct = deduplicateClassesClient(schoolJson.data.students.map((s: any) => s.className).filter(Boolean));
-            if (!matchedClass) {
-              const freshMatch = freshDistinct.find((c: string) => getClassBaseKeyClient(c) === targetBaseKey);
-              if (freshMatch) resolvedClass = freshMatch;
+            const freshMatch = freshDistinct.find((c: string) => getClassBaseKeyClient(c) === targetBaseKey);
+            if (freshMatch) {
+              resolvedClass = freshMatch;
+            } else if (!matchedClass && freshDistinct.length > 0) {
+              resolvedClass = freshDistinct[0];
             }
 
             const baseKey = getClassBaseKeyClient(resolvedClass);

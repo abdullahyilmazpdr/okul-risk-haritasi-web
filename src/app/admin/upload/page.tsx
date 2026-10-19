@@ -457,7 +457,12 @@ export default function UploadPage() {
         return matchInAvailable || tc;
       })
     );
-    setTeacherFormSelectedClasses(mappedClasses);
+    // Müdür Yardımcısı okuldaki tüm sınıflardan sorumludur; otomatik olarak tüm sınıflar seçili gelsin
+    if (roleStr.includes('Müdür Yardımcısı') && availableClasses.length > 0) {
+      setTeacherFormSelectedClasses([...availableClasses]);
+    } else {
+      setTeacherFormSelectedClasses(mappedClasses);
+    }
     setTeacherFormExtraClasses('');
     setAutoUsernameEnabled(false);
     setShowTeacherModal(true);
@@ -508,7 +513,11 @@ export default function UploadPage() {
         .split(',')
         .map(c => c.trim())
         .filter(Boolean);
-      const combinedClasses = deduplicateClassesClient([...teacherFormSelectedClasses, ...extraClasses]);
+      let combinedClasses = deduplicateClassesClient([...teacherFormSelectedClasses, ...extraClasses]);
+      // Eğer Müdür Yardımcısı ise okuldaki tüm sınıfları garanti olarak ekle
+      if (teacherFormRoleType === 'Müdür Yardımcısı' && availableClasses.length > 0) {
+        combinedClasses = deduplicateClassesClient([...combinedClasses, ...availableClasses]);
+      }
 
       let finalRoleOrBranch = teacherFormRoleType;
       if (teacherFormBranch.trim()) {
@@ -817,7 +826,13 @@ export default function UploadPage() {
                   </label>
                   <select
                     value={teacherFormRoleType}
-                    onChange={(e) => setTeacherFormRoleType(e.target.value)}
+                    onChange={(e) => {
+                      const newRole = e.target.value;
+                      setTeacherFormRoleType(newRole);
+                      if (newRole === 'Müdür Yardımcısı' && availableClasses.length > 0) {
+                        setTeacherFormSelectedClasses([...availableClasses]);
+                      }
+                    }}
                     className="w-full px-3 py-2.5 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500 focus:outline-none bg-white"
                   >
                     <option value="Ders Öğretmeni">Ders Öğretmeni (Branş)</option>
@@ -917,6 +932,13 @@ export default function UploadPage() {
                     </div>
                   )}
                 </div>
+
+                {teacherFormRoleType === 'Müdür Yardımcısı' && (
+                  <div className="bg-purple-50 border border-purple-200 text-purple-800 p-2.5 rounded-xl text-xs mb-2 flex items-center gap-2">
+                    <span>👑</span>
+                    <span><strong>Müdür Yardımcısı (İdareci):</strong> Okuldaki tüm sınıflar otomatik olarak seçilmiştir ve idareciye açıktır.</span>
+                  </div>
+                )}
 
                 {availableClasses.length > 0 && (
                   <div className="max-h-36 overflow-y-auto p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex flex-wrap gap-1.5 mb-2">
