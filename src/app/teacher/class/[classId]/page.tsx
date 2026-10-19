@@ -64,59 +64,65 @@ function ClassDetailsContent() {
 
     // Sınıf adını belirle
     let resolvedClass = '';
-    const decodedClassId = decodeURIComponent(classId);
-
-    if (currentTeacher?.classes && Array.isArray(currentTeacher.classes) && currentTeacher.classes.length > 0) {
-      const numericIndex = parseInt(classId, 10);
-      if (!isNaN(numericIndex) && numericIndex >= 1 && numericIndex <= currentTeacher.classes.length) {
-        resolvedClass = currentTeacher.classes[numericIndex - 1];
-      } else {
-        const found = currentTeacher.classes.find((c: string) => 
-          c.toLowerCase().trim() === decodedClassId.toLowerCase().trim() ||
-          c.includes(decodedClassId) ||
-          decodedClassId.includes(c)
-        );
-        if (found) resolvedClass = found;
-      }
-    }
-
-    if (!resolvedClass) {
-      resolvedClass = decodedClassId !== '1' ? decodedClassId : 'Genel Sınıf';
-    }
+    const decodedClassId = decodeURIComponent(classId).trim();
+    const targetBaseKey = getClassBaseKeyClient(decodedClassId);
 
     // 1. Önce localStorage'dan öğrenci listesini yükle
     let loadedStudents: any[] = [];
+    let allParsedStudents: any[] = [];
     const storedStudentsRaw = localStorage.getItem('school_students');
     if (storedStudentsRaw) {
       try {
-        const allParsed = JSON.parse(storedStudentsRaw);
-        if (Array.isArray(allParsed) && allParsed.length > 0) {
-          // Eğer resolvedClass henüz genel ise ve listede sınıflar varsa ilk sınıfı al
-          if (resolvedClass === 'Genel Sınıf' && allParsed[0]?.className) {
-            const numericIndex = parseInt(classId, 10);
-            const distinctClasses = deduplicateClassesClient(allParsed.map((s: any) => s.className).filter(Boolean));
-            if (!isNaN(numericIndex) && numericIndex >= 1 && numericIndex <= distinctClasses.length) {
-              resolvedClass = distinctClasses[numericIndex - 1] as string;
-            } else {
-              resolvedClass = allParsed[0].className;
-            }
-          }
-
-          // Sınıfa göre filtrele (Yalnızca bu sınıfa ait öğrencileri al)
-          const baseKey = getClassBaseKeyClient(resolvedClass);
-          const filtered = allParsed.filter((s: any) => {
-            if (!s.className) return false;
-            const sKey = getClassBaseKeyClient(s.className);
-            return sKey === baseKey;
-          });
-
-          if (filtered.length > 0 && filtered[0]?.className && filtered[0].className.length > resolvedClass.length) {
-            resolvedClass = filtered[0].className;
-          }
-
-          loadedStudents = filtered;
-        }
+        const parsed = JSON.parse(storedStudentsRaw);
+        if (Array.isArray(parsed)) allParsedStudents = parsed;
       } catch (e) {}
+    }
+
+    const distinctSchoolClasses = deduplicateClassesClient(allParsedStudents.map((s: any) => s.className).filter(Boolean));
+    const teacherClasses: string[] = Array.isArray(currentTeacher?.classes) ? currentTeacher.classes : [];
+
+    // ÖNCELİK 1: Doğrudan baseKey eşleşmesi (Örn: "9a" -> "ÖEİU - 9/A" veya "9/A")
+    // Önce öğretmenin sınıflarında ara, yoksa okuldaki tüm sınıflarda ara
+    let matchedClass = teacherClasses.find(c => getClassBaseKeyClient(c) === targetBaseKey);
+    if (!matchedClass) {
+      matchedClass = distinctSchoolClasses.find(c => getClassBaseKeyClient(c) === targetBaseKey);
+    }
+
+    // ÖNCELİK 2: Metin/İsim eşleşmesi (Tam eşitlik veya includes)
+    if (!matchedClass) {
+      const lowerDecoded = decodedClassId.toLowerCase();
+      matchedClass = teacherClasses.find(c => c.toLowerCase().trim() === lowerDecoded || c.toLowerCase().includes(lowerDecoded));
+    }
+    if (!matchedClass) {
+      const lowerDecoded = decodedClassId.toLowerCase();
+      matchedClass = distinctSchoolClasses.find(c => c.toLowerCase().trim() === lowerDecoded || c.toLowerCase().includes(lowerDecoded));
+    }
+
+    // ÖNCELİK 3: Sayısal İndeks (Yalnızca parametre TAMAMEN rakamlardan oluşuyorsa, örn: "1", "2")
+    if (!matchedClass && /^\d+$/.test(decodedClassId)) {
+      const numericIndex = parseInt(decodedClassId, 10);
+      if (teacherClasses.length > 0 && numericIndex >= 1 && numericIndex <= teacherClasses.length) {
+        matchedClass = teacherClasses[numericIndex - 1];
+      } else if (distinctSchoolClasses.length > 0 && numericIndex >= 1 && numericIndex <= distinctSchoolClasses.length) {
+        matchedClass = distinctSchoolClasses[numericIndex - 1];
+      }
+    }
+
+    resolvedClass = matchedClass || (decodedClassId !== '1' ? decodedClassId : (distinctSchoolClasses[0] || 'Genel Sınıf'));
+
+    if (allParsedStudents.length > 0) {
+      // Sınıfa göre filtrele (Yalnızca bu sınıfa ait öğrencileri al)
+      const baseKey = getClassBaseKeyClient(resolvedClass);
+      const filtered = allParsedStudents.filter((s: any) => {
+        if (!s.className) return false;
+        return getClassBaseKeyClient(s.className) === baseKey;
+      });
+
+      if (filtered.length > 0 && filtered[0]?.className && filtered[0].className.length > resolvedClass.length) {
+        resolvedClass = filtered[0].className;
+      }
+
+      loadedStudents = filtered;
     }
 
     setCurrentClassName(resolvedClass);
@@ -140,18 +146,42 @@ function ClassDetailsContent() {
 
         if (schoolRes.ok) {
           const schoolJson = await schoolRes.json();
+
+          // Öğretmenin güncel sınıflarını canlı veriden güncelle
+          if (schoolJson?.data?.teachers && Array.isArray(schoolJson.data.teachers) && currentTeacher) {
+            const uNorm = (currentTeacher.username || '').toLowerCase().trim();
+            const nNorm = (currentTeacher.name || '').toLowerCase().trim();
+            const liveT = schoolJson.data.teachers.find((t: any) =>
+              (uNorm && (t.username || '').toLowerCase().trim() === uNorm) ||
+              (nNorm && (t.name || '').toLowerCase().trim() === nNorm)
+            );
+            if (liveT && Array.isArray(liveT.classes) && liveT.classes.length > 0) {
+              const updated = deduplicateClassesClient(liveT.classes);
+              currentTeacher.classes = updated;
+              localStorage.setItem('teacher_session', JSON.stringify(currentTeacher));
+              setTeacher({ ...currentTeacher });
+            }
+          }
+
           if (schoolJson?.data?.students && Array.isArray(schoolJson.data.students) && schoolJson.data.students.length > 0) {
             localStorage.setItem('school_students', JSON.stringify(schoolJson.data.students));
             
+            const freshDistinct = deduplicateClassesClient(schoolJson.data.students.map((s: any) => s.className).filter(Boolean));
+            if (!matchedClass) {
+              const freshMatch = freshDistinct.find((c: string) => getClassBaseKeyClient(c) === targetBaseKey);
+              if (freshMatch) resolvedClass = freshMatch;
+            }
+
             const baseKey = getClassBaseKeyClient(resolvedClass);
             const filtered = schoolJson.data.students.filter((s: any) => {
               if (!s.className) return false;
-              const sKey = getClassBaseKeyClient(s.className);
-              return sKey === baseKey;
+              return getClassBaseKeyClient(s.className) === baseKey;
             });
 
             if (filtered.length > 0 && filtered[0]?.className && filtered[0].className.length > resolvedClass.length) {
               setCurrentClassName(filtered[0].className);
+            } else {
+              setCurrentClassName(resolvedClass);
             }
 
             freshStudents = filtered;

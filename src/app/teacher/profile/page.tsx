@@ -64,6 +64,34 @@ export default function TeacherProfilePage() {
         }
         setTeacher(parsed);
         setMounted(true);
+
+        // Canlı E-Tablo verisinden öğretmenin güncel sınıflarını senkronize et
+        const schoolKey = parsed?.schoolKey || localStorage.getItem('last_school_key') || '';
+        const spreadsheetId = parsed?.spreadsheetId || localStorage.getItem('active_spreadsheet_id') || '';
+        const url = new URL('/api/school-data', window.location.origin);
+        if (schoolKey) url.searchParams.set('schoolKey', schoolKey);
+        if (spreadsheetId) url.searchParams.set('spreadsheetId', spreadsheetId);
+
+        fetch(url.toString())
+          .then(r => r.json())
+          .then(json => {
+            if (json?.data?.teachers && Array.isArray(json.data.teachers)) {
+              const uNorm = (parsed.username || '').toLowerCase().trim();
+              const nNorm = (parsed.name || '').toLowerCase().trim();
+              const liveTeacher = json.data.teachers.find(
+                (t: any) =>
+                  (uNorm && (t.username || '').toLowerCase().trim() === uNorm) ||
+                  (nNorm && (t.name || '').toLowerCase().trim() === nNorm)
+              );
+              if (liveTeacher && Array.isArray(liveTeacher.classes)) {
+                const updatedClasses = deduplicateClassesClient(liveTeacher.classes);
+                parsed.classes = updatedClasses;
+                localStorage.setItem('teacher_session', JSON.stringify(parsed));
+                setTeacher({ ...parsed });
+              }
+            }
+          })
+          .catch(() => {});
       } catch (e) {
         window.location.href = '/teacher/login';
       }

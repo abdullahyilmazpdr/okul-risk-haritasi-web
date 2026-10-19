@@ -61,7 +61,8 @@ export default function TeacherDashboard() {
 
       const buildClassList = (allStudents: any[], overrideTeacherClasses?: string[]) => {
         let targetClassNames: string[] = deduplicateClassesClient(overrideTeacherClasses || parsed.classes || []);
-        if ((!targetClassNames.length || parsed.isAdmin) && allStudents.length > 0) {
+        // Yalnızca kullanıcıya atanmış özel bir sınıf yoksa okulun tüm sınıflarını listele
+        if (!targetClassNames.length && allStudents.length > 0) {
           const distinctClasses = deduplicateClassesClient(allStudents.map(s => s.className).filter(Boolean));
           if (distinctClasses.length > 0) {
             targetClassNames = distinctClasses;
@@ -86,7 +87,7 @@ export default function TeacherDashboard() {
             });
 
             return {
-              id: String(idx + 1),
+              id: baseKey || String(idx + 1),
               name: displayName,
               shortName: displayName.replace('ÖEİU - ', ''),
               studentCount: matchingStudents.length
@@ -98,7 +99,7 @@ export default function TeacherDashboard() {
           const dynamicList = distinctClasses.map((clsName: string, idx: number) => {
             const baseKey = getClassBaseKeyClient(clsName);
             return {
-              id: String(idx + 1),
+              id: baseKey || String(idx + 1),
               name: clsName,
               shortName: clsName.replace('ÖEİU - ', ''),
               studentCount: allStudents.filter(s => getClassBaseKeyClient(s.className) === baseKey).length
