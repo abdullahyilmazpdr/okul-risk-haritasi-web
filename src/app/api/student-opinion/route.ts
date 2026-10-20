@@ -14,7 +14,8 @@ const RISK_SHEET_HEADERS = [
   'ŞÖK Görüşü',
   'Risk Haritası Maddeleri',
   'Kayıt Tarihi',
-  'Grup Eğitimi Günleri'
+  'Grup Eğitimi Günleri',
+  'Diğer Risk Açıklaması'
 ];
 
 function cleanTr(str: string): string {
@@ -118,7 +119,8 @@ function extractRecordFromRow(r: any[]) {
     opinion: String(r[colOffset + 5] || '').trim(),
     risks: parseRisks(r[colOffset + 6]),
     date: String(r[colOffset + 7] || '').trim(),
-    groupTrainingDays: groupDays
+    groupTrainingDays: groupDays,
+    otherRiskNote: String(r[colOffset + 9] || '').trim()
   };
 }
 
@@ -184,8 +186,9 @@ export async function GET(req: NextRequest) {
             opinion: r.opinion,
             risks: parseRisks(r.risks),
             date: r.date,
-            groupTrainingDays: r.groupTrainingDays || []
-          })).filter(o => o.opinion || (o.risks && o.risks.length > 0) || (o.groupTrainingDays && o.groupTrainingDays.length > 0));
+            groupTrainingDays: r.groupTrainingDays || [],
+            otherRiskNote: r.otherRiskNote || ''
+          })).filter(o => o.opinion || (o.risks && o.risks.length > 0) || (o.groupTrainingDays && o.groupTrainingDays.length > 0) || o.otherRiskNote);
 
           return NextResponse.json({
             success: true,
@@ -359,6 +362,13 @@ export async function POST(req: NextRequest) {
       groupDaysToSave = existingRec.groupTrainingDays;
     }
 
+    let otherRiskNoteToSave = existingRec?.otherRiskNote || '';
+    if (isCounselorOrAdmin) {
+      if (typeof body.otherRiskNote === 'string') {
+        otherRiskNoteToSave = body.otherRiskNote.trim();
+      }
+    }
+
     recordsMap.set(incomingKey, {
       num: sNum,
       name: studentName || existingRec?.name || '',
@@ -368,7 +378,8 @@ export async function POST(req: NextRequest) {
       opinion: opinion !== undefined ? String(opinion).trim() : (existingRec?.opinion || ''),
       risks: risksToSave,
       date: dateStr,
-      groupTrainingDays: groupDaysToSave
+      groupTrainingDays: groupDaysToSave,
+      otherRiskNote: otherRiskNoteToSave
     });
 
     // Kayıtları öğrenci numarasına göre sırala
@@ -379,7 +390,7 @@ export async function POST(req: NextRequest) {
       return numA - numB;
     });
 
-    // A:I aralığına yazılacak temiz tablo
+    // A:J aralığına yazılacak temiz tablo
     const cleanSheetRows = [
       RISK_SHEET_HEADERS,
       ...sortedRecords.map(r => [
@@ -391,16 +402,17 @@ export async function POST(req: NextRequest) {
         r.opinion || '',
         JSON.stringify(parseRisks(r.risks)),
         r.date,
-        JSON.stringify(r.groupTrainingDays || [])
+        JSON.stringify(r.groupTrainingDays || []),
+        r.otherRiskNote || ''
       ])
     ];
 
-    // Temiz tabloyu A1'den itibaren nizami şekilde yaz (A'dan I'ya)
-    await updateSheetRange(accessToken, spreadsheetId, `OkulRisk!A1:I${cleanSheetRows.length}`, cleanSheetRows);
+    // Temiz tabloyu A1'den itibaren nizami şekilde yaz (A'dan J'ye)
+    await updateSheetRange(accessToken, spreadsheetId, `OkulRisk!A1:J${cleanSheetRows.length}`, cleanSheetRows);
 
     // Eğer eski satır sayısı fazlaysa alt satırlardaki eski verileri temizle
     if (rawRows.length > cleanSheetRows.length && cleanSheetRows.length > 1) {
-      await clearSheetRange(accessToken, spreadsheetId, `OkulRisk!A${cleanSheetRows.length + 1}:I${rawRows.length + 5}`);
+      await clearSheetRange(accessToken, spreadsheetId, `OkulRisk!A${cleanSheetRows.length + 1}:J${rawRows.length + 5}`);
     }
 
     // KVKK Denetim İzi: Risk veya Görüş girişini arka planda kaydet

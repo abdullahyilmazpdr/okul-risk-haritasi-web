@@ -37,6 +37,7 @@ function StudentDetailsContent() {
   const [teacher, setTeacher] = useState<any>(null);
   const [sokOpinion, setSokOpinion] = useState('');
   const [selectedRisks, setSelectedRisks] = useState<Set<number>>(new Set());
+  const [otherRiskNote, setOtherRiskNote] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [otherOpinions, setOtherOpinions] = useState<any[]>([]);
@@ -210,6 +211,10 @@ function StudentDetailsContent() {
             setGroupDays(evalObj.groupTrainingDays);
           }
 
+          if (evalObj.otherRiskNote) {
+            setOtherRiskNote(evalObj.otherRiskNote);
+          }
+
           if (evalObj.opinions && typeof evalObj.opinions === 'object') {
             for (const [uKey, opData] of Object.entries<any>(evalObj.opinions)) {
               if (uKey.toLowerCase().trim() === teacherUser) {
@@ -286,6 +291,9 @@ function StudentDetailsContent() {
                 if (op.groupTrainingDays && Array.isArray(op.groupTrainingDays) && op.groupTrainingDays.length > 0) {
                   setIsGroupTraining(true);
                   setGroupDays(op.groupTrainingDays);
+                }
+                if (op.otherRiskNote) {
+                  setOtherRiskNote(op.otherRiskNote);
                 }
               }
               if (remoteOthers.length > 0) {
@@ -364,6 +372,7 @@ function StudentDetailsContent() {
       if (isClassTeacher || isAdmin) {
         evalData.risks = Array.from(selectedRisks);
         evalData.groupTrainingDays = activeGroupDays;
+        evalData.otherRiskNote = otherRiskNote.trim();
       }
 
       if (!evalData.opinions) evalData.opinions = {};
@@ -394,6 +403,7 @@ function StudentDetailsContent() {
             opinion: sokOpinion.trim(),
             risks: isClassTeacher || isAdmin ? Array.from(selectedRisks) : [],
             groupTrainingDays: isClassTeacher || isAdmin ? activeGroupDays : [],
+            otherRiskNote: isClassTeacher || isAdmin ? otherRiskNote.trim() : '',
             spreadsheetId: storedSpreadsheetId,
             accessToken: storedToken,
             schoolKey: teacher?.schoolKey || localStorage.getItem('last_school_key') || '',
@@ -528,27 +538,44 @@ function StudentDetailsContent() {
                 {filteredRiskItems.map((item) => {
                   const originalIndex = MEB_OFFICIAL_RISK_ITEMS.indexOf(item);
                   const isSelected = selectedRisks.has(originalIndex);
+                  const isOther = item.toLowerCase().includes('diğer');
                   return (
-                    <label 
+                    <div 
                       key={originalIndex} 
-                      className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${
+                      className={`p-3 rounded-xl border transition-all ${
                         isSelected 
                           ? 'bg-amber-50/90 border-amber-400 text-amber-950 shadow-xs' 
                           : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
                       }`}
                     >
-                      <div className="pt-0.5">
-                        <input 
-                          type="checkbox" 
-                          className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
-                          checked={isSelected}
-                          onChange={() => toggleRisk(originalIndex)}
-                        />
-                      </div>
-                      <span className="text-xs font-medium select-none leading-relaxed">
-                        {originalIndex + 1}. {item}
-                      </span>
-                    </label>
+                      <label className="flex items-start gap-3 cursor-pointer">
+                        <div className="pt-0.5">
+                          <input 
+                            type="checkbox" 
+                            className="w-4 h-4 rounded border-slate-300 text-amber-600 focus:ring-amber-500"
+                            checked={isSelected}
+                            onChange={() => toggleRisk(originalIndex)}
+                          />
+                        </div>
+                        <span className="text-xs font-medium select-none leading-relaxed">
+                          {originalIndex + 1}. {item}
+                        </span>
+                      </label>
+                      {isOther && isSelected && (
+                        <div className="mt-2.5 pt-2 border-t border-amber-200" onClick={(e) => e.stopPropagation()}>
+                          <label className="block text-[11px] font-bold text-amber-900 mb-1">
+                            Diğer Risk Durumunu Açıklayınız (İsteğe Bağlı):
+                          </label>
+                          <input
+                            type="text"
+                            value={otherRiskNote}
+                            onChange={(e) => setOtherRiskNote(e.target.value)}
+                            placeholder="Örn: Ailede adli cezaevi geçmişi, yabancı uyruklu uyum sorunu vb..."
+                            className="w-full px-3 py-2 bg-white border border-amber-300 rounded-lg text-xs text-slate-800 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                          />
+                        </div>
+                      )}
+                    </div>
                   );
                 })}
               </div>

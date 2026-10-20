@@ -61,6 +61,82 @@ function getClassBaseKey(raw: string): string {
     .replace(/[^a-z0-9çğıöşü]/g, '');
 }
 
+const SOK_TERM_TEMPLATES: Record<string, { agenda: string[]; decisions: string[] }> = {
+  '1. Dönem Başı': {
+    agenda: [
+      'Açılış, yoklama ve kurul başkanının konuşması.',
+      'Bir önceki eğitim öğretim yılı genel değerlendirmesi ve hedeflerin belirlenmesi.',
+      '{CLASS} şubesi öğrencilerinin hazırbulunuşluk düzeyleri, devam-devamsızlık ve uyum süreçlerinin görüşülmesi.',
+      'Sınıf Risk Haritasının oluşturulması, risk faktörlerinin ve öğrenci ihtiyaçlarının belirlenmesi.',
+      'Özel eğitim ve kaynaştırma öğrencilerinin (BEP) planlamalarının yapılması.',
+      'Akademik başarıyı artırıcı ve riskleri önleyici tedbirlerin kararlaştırılması.',
+      'Alınan kurul kararları ve kapanış.'
+    ],
+    decisions: [
+      'Risk altında olduğu tespit edilen öğrencilerin durumlarının okul rehberlik servisine iletilerek takibinin sağlanmasına,',
+      'Akademik ve davranışsal gelişim ihtiyacı bulunan öğrenciler için veli görüşmelerinin ve bilgilendirmelerin sıklaştırılmasına,',
+      'Ders içi motivasyonu artırmak amacıyla öğrenci merkezli ve destekleyici öğretim yöntemlerinin uygulanmasına,',
+      'Kaynaştırma ve özel eğitim ihtiyacı olan öğrenciler için Bireyselleştirilmiş Eğitim Planı (BEP) hedeflerinin güncellenmesine,',
+      'Öğrencilerin devamsızlık ve ders takibinin sınıf rehber öğretmeni ve ilgili müdür yardımcısı tarafından koordineli yürütülmesine.'
+    ]
+  },
+  '1. Dönem Sonu': {
+    agenda: [
+      'Açılış, yoklama ve kurul başkanının konuşması.',
+      '1. Dönem başında alınan ŞÖK kararlarının uygulama sonuçlarının değerlendirilmesi.',
+      '{CLASS} şubesi öğrencilerinin 1. dönem ders başarı durumları, ders notları ve akademik gelişimlerinin değerlendirilmesi.',
+      'Öğrencilerin 1. dönem devamsızlık ve disiplin durumlarının görüşülmesi.',
+      'Risk haritasında takip edilen öğrencilerin 1. dönem gelişim ve takip süreçlerinin incelenmesi.',
+      'Başarısızlık veya uyum sorunu yaşayan öğrenciler için ara tatil önerileri ve 2. dönem eylem planının oluşturulması.',
+      'Alınan kurul kararları ve kapanış.'
+    ],
+    decisions: [
+      '1. Dönem sonu ders başarı analizlerine göre başarısı düşük derslerde telafi ve pekiştirme etkinliklerinin 2. dönem başında planlanmasına,',
+      'Özellikle devamsızlık sınırına yaklaşan öğrencilerin velilerine ara tatil öncesi yazılı bildirim yapılmasına,',
+      'Risk grubundaki öğrencilerin rehberlik servisiyle yürütülen izleme çalışmalarının 2. dönemde de kararlılıkla sürdürülmesine,',
+      'BEP uygulanan özel eğitim öğrencilerinin 1. dönem kazanımlarının değerlendirilerek 2. dönem bireysel hedeflerinin gözden geçirilmesine,',
+      'Öğrencilerin ara tatilde verimli ders çalışma ve kitap okuma alışkanlıklarını destekleyici yönlendirmelerin yapılmasına.'
+    ]
+  },
+  '2. Dönem Başı': {
+    agenda: [
+      'Açılış, yoklama ve kurul başkanının konuşması.',
+      '1. Dönem sonu ŞÖK kararlarının ve karne sonuçlarının gözden geçirilmesi.',
+      '{CLASS} şubesi öğrencilerinin 2. döneme yönelik akademik hedeflerinin ve çalışma planlarının görüşülmesi.',
+      'Risk grubundaki öğrencilerin güncel durumları ve rehberlik servisi izleme raporlarının değerlendirilmesi.',
+      'BEP uygulanan öğrencilerin 2. dönem bireysel gelişim hedeflerinin revize edilmesi.',
+      'Destekleme ve Yetiştirme Kursları (DYK), ders dışı etütler ve veli iş birliği çalışmalarının planlanması.',
+      'Alınan kurul kararları ve kapanış.'
+    ],
+    decisions: [
+      '1. Dönem akademik açığı bulunan öğrencilere yönelik ders içi destek ve etüt çalışmalarının başlatılmasına,',
+      'Devamsızlık riski taşıyan öğrencilerin günlük takibinin hassasiyetle yapılarak veli ile anlık iletişim kurulmasına,',
+      'Sınıf Risk Haritasında yer alan öğrencilerin sosyal, kültürel ve sportif etkinliklere katılımlarının teşvik edilmesine,',
+      'Özel eğitim ve kaynaştırma öğrencilerinin BEP hedefleri doğrultusunda sınav uyarlamalarının yapılmasına,',
+      'LGS/YKS veya üst öğrenime geçiş sürecindeki öğrencilere yönelik sınav kaygısı ve motivasyon seminerleri düzenlenmesine.'
+    ]
+  },
+  '2. Dönem Sonu': {
+    agenda: [
+      'Açılış, yoklama ve kurul başkanının konuşması.',
+      'Yıl boyunca alınan ŞÖK kararlarının gerçekleşme düzeylerinin ve şube hedeflerinin değerlendirilmesi.',
+      '{CLASS} şubesi öğrencilerinin yıl sonu başarı, ders geçme, teşekkür/takdir ve sınıf tekrarı durumlarının görüşülmesi.',
+      'Öğrencilerin yıllık devam-devamsızlık ve davranış değerlendirmelerinin yapılması.',
+      'Risk haritasında takip edilen öğrencilerin yıllık gelişim ve sonuç raporlarının değerlendirilmesi.',
+      'Özel eğitim ve BEP öğrencilerinin yıl sonu gelişim düzeylerinin RAM’a bildirilmek üzere karara bağlanması.',
+      'Üst öğrenim kurumuna veya bir sonraki sınıfa geçecek öğrencilere yönelik yönlendirme ve yaz tatili önerileri.',
+      'Alınan kurul kararları ve kapanış.'
+    ],
+    decisions: [
+      'Yıl sonu ders başarı durumları ve sınıf geçme kararlarının mevzuat doğrultusunda e-Okul sistemine işlenmesine,',
+      'Sınıf tekrarı riski olan öğrencilerin ders bazında durumlarının hassasiyetle incelenerek kurulca karara bağlanmasına,',
+      'Risk haritasında yer alan öğrencilerin yıl boyunca gösterdikleri olumlu gelişimlerin öğrenci dosyasında muhafaza edilmesine,',
+      'BEP uygulanan öğrencilerin yıl sonu bireysel gelişim raporlarının hazırlanarak RAM’a gönderilmek üzere idareye teslim edilmesine,',
+      'Öğrencilerin yaz tatili döneminde kişisel gelişimlerini sürdürebilmeleri için rehberlik servisi tavsiyelerinin velilerle paylaşılmasına.'
+    ]
+  }
+};
+
 export default function AdminSokPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClass, setSelectedClass] = useState('ALL');
@@ -75,14 +151,10 @@ export default function AdminSokPage() {
   const [minutesTerm, setMinutesTerm] = useState('1. Dönem Başı');
   const [minutesDate, setMinutesDate] = useState('2025-09-15');
   const [currentAcademicYear, setCurrentAcademicYear] = useState('2025-2026');
-  const [decisionItems, setDecisionItems] = useState<string[]>([
-    'Risk altında olduğu tespit edilen öğrencilerin durumlarının okul rehberlik servisine iletilerek takibinin sağlanmasına,',
-    'Akademik ve davranışsal gelişim ihtiyacı bulunan öğrenciler için veli görüşmelerinin ve bilgilendirmelerin sıklaştırılmasına,',
-    'Ders içi motivasyonu artırmak amacıyla öğrenci merkezli ve destekleyici öğretim yöntemlerinin uygulanmasına,',
-    'Kaynaştırma ve özel eğitim ihtiyacı olan öğrenciler için Bireyselleştirilmiş Eğitim Planı (BEP) hedeflerinin güncellenmesine,',
-    'Öğrencilerin devamsızlık ve ders takibinin sınıf rehber öğretmeni ve ilgili müdür yardımcısı tarafından koordineli yürütülmesine.'
-  ]);
+  const [decisionItems, setDecisionItems] = useState<string[]>(SOK_TERM_TEMPLATES['1. Dönem Başı'].decisions);
+  const [agendaItems, setAgendaItems] = useState<string[]>(SOK_TERM_TEMPLATES['1. Dönem Başı'].agenda);
   const [newDecision, setNewDecision] = useState('');
+  const [studentGeneralNotes, setStudentGeneralNotes] = useState('');
 
   const fetchOpinions = async () => {
     setIsLoading(true);
@@ -181,6 +253,15 @@ export default function AdminSokPage() {
       setMinutesClass('Genel Şube');
     }
     setShowMinutesModal(true);
+  };
+
+  const handleTermChange = (newTerm: string) => {
+    setMinutesTerm(newTerm);
+    const template = SOK_TERM_TEMPLATES[newTerm];
+    if (template) {
+      setAgendaItems(template.agenda);
+      setDecisionItems(template.decisions);
+    }
   };
 
   const handleAddDecision = () => {
@@ -462,7 +543,7 @@ export default function AdminSokPage() {
                 <label className="block font-semibold text-slate-700 mb-1">Dönem / Toplantı Zamanı:</label>
                 <select
                   value={minutesTerm}
-                  onChange={(e) => setMinutesTerm(e.target.value)}
+                  onChange={(e) => handleTermChange(e.target.value)}
                   className="w-full p-2 bg-white border border-slate-300 rounded-lg font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
                 >
                   <option value="1. Dönem Başı">1. Dönem Başı</option>
@@ -511,22 +592,32 @@ export default function AdminSokPage() {
 
               {/* Gündem Maddeleri */}
               <div className="space-y-2">
-                <h4 className="font-bold text-xs uppercase tracking-wide border-b border-slate-300 pb-1 font-sans">
-                  I. GÜNDEM MADDELERİ
-                </h4>
+                <div className="flex items-center justify-between border-b border-slate-300 pb-1">
+                  <h4 className="font-bold text-xs uppercase tracking-wide font-sans">
+                    I. GÜNDEM MADDELERİ ({minutesTerm})
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const tmpl = SOK_TERM_TEMPLATES[minutesTerm];
+                      if (tmpl) setAgendaItems(tmpl.agenda);
+                    }}
+                    className="text-[10px] text-blue-600 hover:underline print:hidden font-sans font-medium"
+                  >
+                    Gündemi Döneme Göre Sıfırla
+                  </button>
+                </div>
                 <ol className="list-decimal list-inside text-xs space-y-1 text-slate-800">
-                  <li>Açılış, yoklama ve kurul başkanının konuşması.</li>
-                  <li>Bir önceki ŞÖK toplantısında alınan kararların değerlendirilmesi.</li>
-                  <li>{minutesClass} şubesi öğrencilerinin akademik başarı, devam-devamsızlık ve disiplin durumlarının görüşülmesi.</li>
-                  <li>Öğrenci bazında tespit edilen risk faktörlerinin, öğretmen görüşlerinin ve sınıf risk haritasının değerlendirilmesi.</li>
-                  <li>Özel eğitime ve desteğe ihtiyacı olan / kaynaştırma öğrencilerinin durumlarının incelenmesi.</li>
-                  <li>Başarının artırılması, riskli öğrencilere yönelik önleyici ve koruyucu tedbirlerin belirlenmesi.</li>
-                  <li>Alınan kurul kararları ve kapanış.</li>
+                  {agendaItems.map((item, idx) => (
+                    <li key={idx} className="leading-relaxed">
+                      {item.replace('{CLASS}', minutesClass || 'Şube')}
+                    </li>
+                  ))}
                 </ol>
               </div>
 
               {/* Görüşülen Öğrenciler ve Öğretmen Değerlendirmeleri */}
-              <div className="space-y-2">
+              <div className="space-y-3">
                 <h4 className="font-bold text-xs uppercase tracking-wide border-b border-slate-300 pb-1 font-sans">
                   II. ÖĞRENCİ BAZINDA ÖĞRETMEN GÖRÜŞ VE DEĞERLENDİRMELERİ
                 </h4>
@@ -567,14 +658,54 @@ export default function AdminSokPage() {
                     </tbody>
                   </table>
                 )}
+
+                {/* Öğrenci Bazında Genel Kurul Notları ve İlave Açıklamalar */}
+                <div className="pt-1">
+                  <div className="p-3 bg-slate-50 border border-slate-300 rounded-lg text-xs leading-relaxed print:bg-transparent">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-bold text-slate-900 font-sans">
+                        Öğrenci Bazında Alınan Genel Kurul Notları ve İlave Açıklamalar:
+                      </span>
+                      <span className="text-[10px] text-slate-400 print:hidden font-sans">İsteğe bağlı metin kutusu</span>
+                    </div>
+                    <div className="print:hidden mb-1">
+                      <textarea
+                        value={studentGeneralNotes}
+                        onChange={(e) => setStudentGeneralNotes(e.target.value)}
+                        rows={2}
+                        placeholder="Öğrencilerle ilgili kurulda alınan özel kararları, veli görüşme planlarını veya şube geneli tespitleri buraya yazabilirsiniz (resmi çıktıda yer alır)..."
+                        className="w-full p-2 bg-white border border-slate-300 rounded-lg text-xs font-sans focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    {studentGeneralNotes.trim() ? (
+                      <p className="text-slate-800 whitespace-pre-wrap italic print:block hidden">
+                        {studentGeneralNotes}
+                      </p>
+                    ) : (
+                      <p className="text-slate-400 italic text-[11px] print:block hidden">
+                        (Kurul tarafından öğrenci bazında ilave özel bir şerh veya açıklama düşülmemiştir.)
+                      </p>
+                    )}
+                  </div>
+                </div>
               </div>
 
               {/* Alınan Kararlar */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between border-b border-slate-300 pb-1">
                   <h4 className="font-bold text-xs uppercase tracking-wide font-sans">
-                    III. KURULDA ALINAN KARARLAR
+                    III. KURULDA ALINAN KARARLAR ({minutesTerm})
                   </h4>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const tmpl = SOK_TERM_TEMPLATES[minutesTerm];
+                      if (tmpl) setDecisionItems(tmpl.decisions);
+                    }}
+                    className="text-[10px] text-blue-600 hover:underline print:hidden font-sans font-medium"
+                  >
+                    Kararları Döneme Göre Sıfırla
+                  </button>
                 </div>
 
                 <ol className="list-decimal list-inside text-xs space-y-1.5 text-slate-800">

@@ -15,18 +15,49 @@ export default function TeacherLoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [isQrLogin, setIsQrLogin] = useState(false);
   const router = useRouter();
 
-  // Sayfaya gelindiğinde form ve oturum sıfırlansın
+  // Sayfaya gelindiğinde form ve oturum sıfırlansın, varsa URL (Karekod) parametreleri okunsun
   useEffect(() => {
     setUsername('');
     setPassword('');
     setLoading(false);
     if (typeof window !== 'undefined') {
       localStorage.removeItem('teacher_session');
-      const savedSchoolKey = localStorage.getItem('last_school_key');
-      if (savedSchoolKey) {
-        setSchoolKey(savedSchoolKey);
+      
+      const urlParams = new URLSearchParams(window.location.search);
+      const paramSchoolKey = urlParams.get('schoolKey');
+      const paramUsername = urlParams.get('username');
+
+      if (paramSchoolKey && paramSchoolKey.trim()) {
+        const cleanKey = paramSchoolKey.trim();
+        setSchoolKey(cleanKey);
+        setIsVerifyingSchool(true);
+        setIsQrLogin(true);
+
+        fetch(`/api/school-data?schoolKey=${cleanKey}&verifyOnly=true`)
+          .then(r => r.json())
+          .then(data => {
+            if (data.success) {
+              setSchoolInfo({
+                name: data.data?.schoolName || 'Okul Tanımlı',
+                maskedSchoolKey: data.data?.maskedSchoolKey || (cleanKey.length > 2 ? `${cleanKey.slice(0, 2)}***` : '***')
+              });
+              localStorage.setItem('last_school_key', cleanKey);
+              if (paramUsername && paramUsername.trim()) {
+                setUsername(paramUsername.trim());
+              }
+              setStep(2);
+            }
+          })
+          .catch(() => {})
+          .finally(() => setIsVerifyingSchool(false));
+      } else {
+        const savedSchoolKey = localStorage.getItem('last_school_key');
+        if (savedSchoolKey) {
+          setSchoolKey(savedSchoolKey);
+        }
       }
     }
   }, []);
@@ -231,6 +262,16 @@ export default function TeacherLoginPage() {
               </button>
             </div>
 
+            {isQrLogin && username && (
+              <div className="bg-indigo-500/20 border border-indigo-400/40 rounded-xl p-3 text-xs text-indigo-100 flex items-center gap-2.5">
+                <span className="text-base">📱</span>
+                <div>
+                  <span className="font-bold text-white block">Karekod Tanımlandı!</span>
+                  <span>Okulunuz ve kullanıcı adınız otomatik dolduruldu. Lütfen yalnızca şifrenizi giriniz.</span>
+                </div>
+              </div>
+            )}
+
             <div>
               <label className="block text-indigo-100 text-xs font-medium mb-1.5">Kullanıcı Adı</label>
               <input 
@@ -239,7 +280,7 @@ export default function TeacherLoginPage() {
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full bg-indigo-950/50 border border-indigo-500/30 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-indigo-300/40 text-sm"
                 placeholder="Örn: ogretmen12 veya ad.soyad"
-                autoFocus
+                autoFocus={!username}
               />
             </div>
             <div>
@@ -250,6 +291,7 @@ export default function TeacherLoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full bg-indigo-950/50 border border-indigo-500/30 text-white rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-indigo-400 placeholder-indigo-300/40 text-sm"
                 placeholder="••••••••"
+                autoFocus={Boolean(username)}
               />
             </div>
 

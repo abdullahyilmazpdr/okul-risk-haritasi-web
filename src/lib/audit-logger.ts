@@ -14,7 +14,7 @@ export const AUDIT_LOG_HEADERS = [
 interface AuditLogEntry {
   performedBy: string;
   role: string;
-  action: 'GIRIS' | 'RISK_KAYIT' | 'GORUS_KAYIT' | 'VERI_INCELEME' | 'CIKIS';
+  action: 'GIRIS' | 'RISK_KAYIT' | 'GORUS_KAYIT' | 'VERI_INCELEME' | 'CIKIS' | 'OGRENCI_EKLE' | 'OGRENCI_GUNCELLE' | 'OGRENCI_SIL' | 'OGRETMEN_EKLE' | 'OGRETMEN_GUNCELLE' | 'OGRETMEN_SIL' | (string & {});
   studentNo?: string;
   studentName?: string;
   details?: string;

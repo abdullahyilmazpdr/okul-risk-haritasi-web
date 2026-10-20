@@ -24,9 +24,11 @@ import {
   Edit3,
   Trash2,
   Sparkles,
-  Lock
+  Lock,
+  QrCode
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import TeacherQrCardsModal from '@/components/TeacherQrCardsModal';
 import { auth } from '@/lib/firebase';
 import { getSchoolData, saveSchoolData } from '@/lib/db';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -141,6 +143,21 @@ export default function UploadPage() {
   const [isSavingTeacher, setIsSavingTeacher] = useState(false);
   const [autoUsernameEnabled, setAutoUsernameEnabled] = useState(true);
 
+  // Manuel Öğrenci Ekleme / Düzenleme Modalı state'leri
+  const [showStudentModal, setShowStudentModal] = useState(false);
+  const [studentModalMode, setStudentModalMode] = useState<'add' | 'edit'>('add');
+  const [editingOriginalNumber, setEditingOriginalNumber] = useState('');
+  const [studentFormNumber, setStudentFormNumber] = useState('');
+  const [studentFormName, setStudentFormName] = useState('');
+  const [studentFormClass, setStudentFormClass] = useState('');
+  const [studentFormGender, setStudentFormGender] = useState('Kız');
+  const [isSavingStudent, setIsSavingStudent] = useState(false);
+
+  // Karekod Kartları Modalı state'i
+  const [showQrModal, setShowQrModal] = useState(false);
+  const [currentSchoolName, setCurrentSchoolName] = useState('');
+  const [currentSchoolKey, setCurrentSchoolKey] = useState('');
+
   // Son işlem sonucu
   const [results, setResults] = useState<any>(null);
 
@@ -160,6 +177,9 @@ export default function UploadPage() {
         setIsLoadingExisting(false);
         return;
       }
+
+      if (schoolData.schoolName) setCurrentSchoolName(schoolData.schoolName);
+      if (schoolData.schoolKey || activeKey) setCurrentSchoolKey(schoolData.schoolKey || activeKey || '');
 
       if (schoolData.serviceAccountKey && typeof schoolData.serviceAccountKey === 'string') {
         setServiceAccountKey(schoolData.serviceAccountKey);
@@ -669,6 +689,169 @@ export default function UploadPage() {
     setOpenClasses(updated);
   };
 
+  // Manuel Öğrenci Ekleme Modalını Aç
+  const openAddStudentModal = (defaultClass?: string) => {
+    setStudentModalMode('add');
+    setEditingOriginalNumber('');
+    setStudentFormNumber('');
+    setStudentFormName('');
+    setStudentFormClass(defaultClass || (availableClasses.length > 0 ? availableClasses[0] : ''));
+    setStudentFormGender('Kız');
+    setShowStudentModal(true);
+  };
+
+  // Öğrenci Düzenleme Modalını Aç
+  const openEditStudentModal = (s: any) => {
+    setStudentModalMode('edit');
+    setEditingOriginalNumber(String(s.number || ''));
+    setStudentFormNumber(String(s.number || ''));
+    setStudentFormName(s.name || '');
+    setStudentFormClass(s.className || '');
+    setStudentFormGender(s.gender || 'Kız');
+    setShowStudentModal(true);
+  };
+
+  // Öğrenciyi E-Tabloya Kaydet (Ekle veya Güncelle)
+  const handleSaveStudent = async () => {
+    if (!studentFormNumber.trim() || !studentFormName.trim() || !studentFormClass.trim()) {
+      toast.error("Lütfen öğrenci numarası, adı soyadı ve sınıfını eksiksiz giriniz.");
+      return;
+    }
+
+    setIsSavingStudent(true);
+    try {
+      if (!auth.currentUser) {
+        toast.error("Yönetici oturumu bulunamadı. Lütfen giriş yapınız.");
+        return;
+      }
+
+      const activeKey = typeof window !== 'undefined' ? localStorage.getItem('admin_active_school_key') : null;
+      const schoolData = await getSchoolData(auth.currentUser.uid, activeKey || undefined);
+      const activeToken = localStorage.getItem('google_access_token') || schoolData?.accessToken || '';
+
+      if (!schoolData?.spreadsheetId) {
+        toast.error("Google E-Tablo bağlantısı eksik.");
+        return;
+      }
+
+      const res = await fetch('/api/students', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(activeToken ? { 'Authorization': `Bearer ${activeToken}` } : {})
+        },
+        body: JSON.stringify({
+          action: studentModalMode === 'add' ? 'add' : 'update',
+          spreadsheetId: schoolData.spreadsheetId,
+          schoolKey: schoolData.schoolKey || activeKey || '',
+          adminUid: auth.currentUser.uid,
+          originalNumber: editingOriginalNumber,
+          existingStudents: activeDisplayData?.students || [],
+          student: {
+            number: studentFormNumber.trim(),
+            name: studentFormName.trim(),
+            className: studentFormClass.trim(),
+            gender: studentFormGender
+          }
+        })
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error(json.error || "Öğrenci kaydedilirken hata oluştu.");
+        return;
+      }
+
+      const updatedStudents = json.data?.students || [];
+      const currentTeachers = activeDisplayData?.teachers || [];
+      const newData = {
+        students: updatedStudents,
+        teachers: currentTeachers
+      };
+
+      setExistingData(newData);
+      if (results) setResults(newData);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('school_students', JSON.stringify(updatedStudents));
+      }
+
+      toast.success(json.message || "Öğrenci başarıyla E-Tabloya kaydedildi!");
+      setShowStudentModal(false);
+    } catch (e: any) {
+      toast.error("Hata: " + (e.message || "İşlem başarısız."));
+    } finally {
+      setIsSavingStudent(false);
+    }
+  };
+
+  // Öğrenciyi Sil
+  const handleDeleteStudent = async (s: any) => {
+    if (!window.confirm(`${s.name} (${s.number}) isimli öğrenciyi listeden silmek istediğinize emin misiniz?`)) {
+      return;
+    }
+
+    const loadingToast = toast.loading("Öğrenci siliniyor...");
+    try {
+      if (!auth.currentUser) {
+        toast.dismiss(loadingToast);
+        toast.error("Yönetici oturumu bulunamadı.");
+        return;
+      }
+
+      const activeKey = typeof window !== 'undefined' ? localStorage.getItem('admin_active_school_key') : null;
+      const schoolData = await getSchoolData(auth.currentUser.uid, activeKey || undefined);
+      const activeToken = localStorage.getItem('google_access_token') || schoolData?.accessToken || '';
+
+      if (!schoolData?.spreadsheetId) {
+        toast.dismiss(loadingToast);
+        toast.error("Google E-Tablo bağlantısı eksik.");
+        return;
+      }
+
+      const res = await fetch('/api/students', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(activeToken ? { 'Authorization': `Bearer ${activeToken}` } : {})
+        },
+        body: JSON.stringify({
+          action: 'delete',
+          spreadsheetId: schoolData.spreadsheetId,
+          schoolKey: schoolData.schoolKey || activeKey || '',
+          adminUid: auth.currentUser.uid,
+          originalNumber: s.number,
+          existingStudents: activeDisplayData?.students || []
+        })
+      });
+
+      const json = await res.json();
+      toast.dismiss(loadingToast);
+
+      if (!res.ok) {
+        toast.error(json.error || "Öğrenci silinirken hata oluştu.");
+        return;
+      }
+
+      const updatedStudents = json.data?.students || [];
+      const currentTeachers = activeDisplayData?.teachers || [];
+      const newData = {
+        students: updatedStudents,
+        teachers: currentTeachers
+      };
+
+      setExistingData(newData);
+      if (results) setResults(newData);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('school_students', JSON.stringify(updatedStudents));
+      }
+
+      toast.success(json.message || "Öğrenci silindi.");
+    } catch (e: any) {
+      toast.dismiss(loadingToast);
+      toast.error("Hata: " + (e.message || "İşlem başarısız."));
+    }
+  };
+
   // Tüm öğretmenlerin giriş bilgilerini metin olarak panoya kopyala
   const handleCopyAllCredentials = () => {
     if (!activeDisplayData?.teachers || activeDisplayData.teachers.length === 0) {
@@ -991,6 +1174,142 @@ export default function UploadPage() {
                   <><Loader2 className="w-4 h-4 animate-spin" /> Kaydediliyor...</>
                 ) : (
                   <><CheckCircle2 className="w-4 h-4" /> {teacherModalMode === 'add' ? 'Öğretmeni Ekle' : 'Değişiklikleri Kaydet'}</>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Karekod Kartları Modalı */}
+      <TeacherQrCardsModal
+        isOpen={showQrModal}
+        onClose={() => setShowQrModal(false)}
+        schoolName={currentSchoolName || 'Okul Risk ve ŞÖK'}
+        schoolKey={currentSchoolKey || ''}
+        teachers={activeDisplayData?.teachers || []}
+      />
+
+      {/* Manuel Öğrenci Ekleme / Düzenleme Modalı */}
+      {showStudentModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5 border border-slate-200 my-8">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-blue-100 text-blue-700 rounded-xl">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">
+                    {studentModalMode === 'add' ? 'Yeni Öğrenci Ekle' : 'Öğrenci Bilgilerini Düzenle'}
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Öğrenci bilgileri doğrudan Google E-Tablonuzdaki &apos;Öğrenciler&apos; sayfasına kaydedilir.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowStudentModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Öğrenci Numarası *
+                </label>
+                <input
+                  type="text"
+                  value={studentFormNumber}
+                  onChange={(e) => setStudentFormNumber(e.target.value)}
+                  placeholder="Örn: 104"
+                  className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Adı Soyadı *
+                </label>
+                <input
+                  type="text"
+                  value={studentFormName}
+                  onChange={(e) => setStudentFormName(e.target.value)}
+                  placeholder="Örn: Ayşe Kaya"
+                  className="w-full px-3.5 py-2.5 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Sınıfı / Şubesi *
+                </label>
+                <div className="space-y-2">
+                  <select
+                    value={availableClasses.includes(studentFormClass) ? studentFormClass : '__custom__'}
+                    onChange={(e) => {
+                      if (e.target.value !== '__custom__') {
+                        setStudentFormClass(e.target.value);
+                      }
+                    }}
+                    className="w-full px-3 py-2.5 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+                  >
+                    <option value="" disabled>Sınıf Seçiniz</option>
+                    {availableClasses.map((cls) => (
+                      <option key={cls} value={cls}>{cls}</option>
+                    ))}
+                    <option value="__custom__">+ Listede Olmayan Yeni Sınıf Yaz</option>
+                  </select>
+
+                  {(!availableClasses.includes(studentFormClass) || !studentFormClass) && (
+                    <input
+                      type="text"
+                      value={studentFormClass}
+                      onChange={(e) => setStudentFormClass(e.target.value)}
+                      placeholder="Sınıf Adını Yazınız (Örn: 5. Sınıf / A Şubesi)"
+                      className="w-full px-3.5 py-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                    />
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Cinsiyeti
+                </label>
+                <select
+                  value={studentFormGender}
+                  onChange={(e) => setStudentFormGender(e.target.value)}
+                  className="w-full px-3 py-2.5 text-sm border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white"
+                >
+                  <option value="Kız">Kız</option>
+                  <option value="Erkek">Erkek</option>
+                  <option value="Belirtilmedi">Belirtilmedi</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowStudentModal(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50"
+              >
+                İptal
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveStudent}
+                disabled={isSavingStudent}
+                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:bg-blue-300 text-white text-sm font-semibold flex items-center gap-2 shadow-sm"
+              >
+                {isSavingStudent ? (
+                  <><Loader2 className="w-4 h-4 animate-spin" /> Kaydediliyor...</>
+                ) : (
+                  <><CheckCircle2 className="w-4 h-4" /> {studentModalMode === 'add' ? 'Öğrenciyi Ekle' : 'Değişiklikleri Kaydet'}</>
                 )}
               </button>
             </div>
@@ -1354,6 +1673,15 @@ export default function UploadPage() {
                   Sınıflar ve Öğrenciler
                 </h3>
                 <div className="flex items-center gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => openAddStudentModal()}
+                    className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg flex items-center gap-1 font-semibold transition-colors shadow-sm"
+                  >
+                    <UserPlus className="w-3.5 h-3.5" />
+                    Öğrenci Ekle
+                  </button>
+                  <span className="text-slate-300">|</span>
                   <button 
                     onClick={() => toggleAllClasses(true)}
                     className="text-blue-600 hover:text-blue-800 font-medium"
@@ -1394,10 +1722,49 @@ export default function UploadPage() {
 
                       {isOpen && (
                         <div className="p-3 border-t border-slate-100 bg-white space-y-2">
+                          <div className="flex justify-between items-center px-1 pb-1">
+                            <span className="text-[11px] font-semibold text-slate-500">{className} Öğrenci Listesi</span>
+                            <button
+                              type="button"
+                              onClick={() => openAddStudentModal(className)}
+                              className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1"
+                            >
+                              <UserPlus className="w-3 h-3" /> Bu Sınıfa Öğrenci Ekle
+                            </button>
+                          </div>
                           {classStudents.map((s: any, idx: number) => (
-                            <div key={idx} className="flex justify-between items-center py-1.5 px-3 bg-slate-50 rounded-lg text-xs">
-                              <span className="font-medium text-slate-800">{s.number} - {s.name}</span>
-                              <span className="text-slate-400 font-mono">No: {s.number}</span>
+                            <div key={idx} className="flex justify-between items-center py-1.5 px-3 bg-slate-50 hover:bg-slate-100 rounded-lg text-xs group transition-colors">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className="font-medium text-slate-800 truncate">{s.number} - {s.name}</span>
+                                {s.gender && s.gender !== 'Belirtilmedi' && (
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                    s.gender.toLowerCase().includes('kız') 
+                                      ? 'bg-pink-100 text-pink-700' 
+                                      : 'bg-blue-100 text-blue-700'
+                                  }`}>
+                                    {s.gender}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                <span className="text-slate-400 font-mono text-[11px] mr-1">No: {s.number}</span>
+                                <button
+                                  type="button"
+                                  onClick={() => openEditStudentModal(s)}
+                                  className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                  title="Öğrenci Bilgilerini Düzenle"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteStudent(s)}
+                                  className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
+                                  title="Öğrenciyi Sil"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
                             </div>
                           ))}
                         </div>
@@ -1422,6 +1789,15 @@ export default function UploadPage() {
                   >
                     <UserPlus className="w-3.5 h-3.5" />
                     Öğretmen Ekle
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowQrModal(true)}
+                    className="px-2.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold rounded-lg flex items-center gap-1 transition-colors shadow-sm"
+                    title="Tüm öğretmenlerin karekodlu giriş kartlarını hazırla ve yazdır"
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                    Karekod Kartları (Yazdır)
                   </button>
                   <button
                     onClick={handleCopyAllCredentials}
