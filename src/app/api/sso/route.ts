@@ -121,10 +121,22 @@ export async function POST(req: NextRequest) {
 
     // 3. YÖNETİCİ / REHBER ÖĞRETMEN İSE
     if (isAdminOrCounselor) {
+      // Sadece Meram Özel Eğitim Uygulama Okulu'na (752927) özel kural:
+      // Meram-mobil uygulamasından gelen e-posta ne olursa olsun, resmi okul yönetici e-posta hesabı
+      // meramisuygulamamerkezi@gmail.com olarak atanır.
+      const officialAdminEmail = cleanSchoolKey === '752927'
+        ? 'meramisuygulamamerkezi@gmail.com'
+        : (email || '');
+
+      const effectiveAdminUid = (cleanSchoolKey === '752927' && schoolData?.adminUid)
+        ? schoolData.adminUid
+        : (uid || 'meram-admin-uid');
+
       const adminSessionPayload = {
         name: cleanName || 'Okul Yöneticisi',
-        email: email || '',
-        uid: uid || '',
+        email: officialAdminEmail,
+        originalMobileEmail: email || '',
+        uid: effectiveAdminUid,
         schoolKey: cleanSchoolKey,
         schoolName,
         spreadsheetId,

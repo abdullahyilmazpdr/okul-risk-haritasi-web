@@ -65,6 +65,9 @@ function SsoHandler() {
           // 1. Yönetici / Rehber Öğretmen Oturumu
           if (data.admin) {
             localStorage.setItem('sso_admin_session', JSON.stringify(data.admin));
+            if (data.admin.email) {
+              localStorage.setItem('admin_email', data.admin.email);
+            }
           }
           if (data.schoolKey) {
             localStorage.setItem('admin_active_school_key', data.schoolKey);

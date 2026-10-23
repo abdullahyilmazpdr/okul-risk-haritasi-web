@@ -63,6 +63,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [transferNotices, setTransferNotices] = useState<any[]>([]);
   const [currentSchoolKey, setCurrentSchoolKey] = useState<string>('');
   const [currentSchoolName, setCurrentSchoolName] = useState<string>('');
+  const [ssoAdminInfo, setSsoAdminInfo] = useState<any>(null);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -84,6 +85,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
       try {
         const ssoAdmin = JSON.parse(ssoAdminStr);
         if (ssoAdmin && ssoAdmin.schoolKey) {
+          setSsoAdminInfo(ssoAdmin);
           setCurrentSchoolKey(ssoAdmin.schoolKey);
           setCurrentSchoolName(ssoAdmin.schoolName || 'Meram Özel Eğitim Uygulama Okulu III. Kademe');
           localStorage.setItem('admin_active_school_key', ssoAdmin.schoolKey);
@@ -273,8 +275,11 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-sm shadow-sm" title={auth.currentUser?.email || 'Yönetici'}>
-              {auth.currentUser?.displayName ? auth.currentUser.displayName.charAt(0).toUpperCase() : 'Y'}
+            <div 
+              className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-sm shadow-sm" 
+              title={ssoAdminInfo ? `${ssoAdminInfo.name} (${ssoAdminInfo.email})` : (auth.currentUser?.email || 'Yönetici')}
+            >
+              {ssoAdminInfo?.name ? ssoAdminInfo.name.charAt(0).toUpperCase() : (auth.currentUser?.displayName ? auth.currentUser.displayName.charAt(0).toUpperCase() : 'Y')}
             </div>
           </div>
         </header>
