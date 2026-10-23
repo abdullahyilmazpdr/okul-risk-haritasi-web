@@ -72,11 +72,33 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
     onLogout: () => {
       signOut(auth).catch(() => {});
       localStorage.removeItem('google_access_token');
+      localStorage.removeItem('sso_admin_session');
     }
   });
 
   // Oturum koruması ve yöneticinin okullarını yükleme
   useEffect(() => {
+    // 1. Meram Mobil veya harici SSO üzerinden gelen Yönetici / Rehber Öğretmen kontrolü
+    const ssoAdminStr = typeof window !== 'undefined' ? localStorage.getItem('sso_admin_session') : null;
+    if (ssoAdminStr) {
+      try {
+        const ssoAdmin = JSON.parse(ssoAdminStr);
+        if (ssoAdmin && ssoAdmin.schoolKey) {
+          setCurrentSchoolKey(ssoAdmin.schoolKey);
+          setCurrentSchoolName(ssoAdmin.schoolName || 'Meram Özel Eğitim Uygulama Okulu III. Kademe');
+          localStorage.setItem('admin_active_school_key', ssoAdmin.schoolKey);
+          if (ssoAdmin.spreadsheetId) {
+            localStorage.setItem('active_spreadsheet_id', ssoAdmin.spreadsheetId);
+          }
+          setSchools([ssoAdmin]);
+          return; // SSO yöneticisi başarıyla yetkilendirildi
+        }
+      } catch (e) {
+        console.warn('SSO oturumu okunamadı:', e);
+      }
+    }
+
+    // 2. Standart Google / Firebase Girişi Kontrolü
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       const token = typeof window !== 'undefined' ? localStorage.getItem('google_access_token') : null;
       if (!user || !token) {
@@ -167,9 +189,10 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
+      await signOut(auth).catch(() => {});
       localStorage.removeItem('google_access_token');
       localStorage.removeItem('admin_active_school_key');
+      localStorage.removeItem('sso_admin_session');
       toast.success("Başarıyla çıkış yapıldı.");
       router.push('/login');
     } catch (error) {
