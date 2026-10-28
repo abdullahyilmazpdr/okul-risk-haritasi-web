@@ -42,6 +42,41 @@ export default function AdminDashboard() {
 
   // Sayfa yüklendiğinde mevcut kullanıcının Okul, E-Tablo ve verilerini kontrol et
   useEffect(() => {
+    const ssoAdminStr = typeof window !== 'undefined' ? localStorage.getItem('sso_admin_session') : null;
+    if (ssoAdminStr) {
+      try {
+        const ssoAdmin = JSON.parse(ssoAdminStr);
+        if (ssoAdmin && ssoAdmin.schoolKey) {
+          setSchoolDefined(true);
+          setSchoolInfo({
+            schoolKey: ssoAdmin.schoolKey,
+            schoolName: ssoAdmin.schoolName || 'Meram Özel Eğitim Uygulama Okulu III. Kademe'
+          });
+          if (ssoAdmin.spreadsheetId) {
+            setSheetCreated(true);
+            setSheetUrl(`https://docs.google.com/spreadsheets/d/${ssoAdmin.spreadsheetId}`);
+            localStorage.setItem('active_spreadsheet_id', ssoAdmin.spreadsheetId);
+            fetch(`/api/school-data?spreadsheetId=${ssoAdmin.spreadsheetId}&schoolKey=${encodeURIComponent(ssoAdmin.schoolKey)}`)
+              .then(r => r.json())
+              .then(json => {
+                if (json?.data?.stats) {
+                  setStats({
+                    totalStudents: json.data.stats.totalStudents || 0,
+                    totalTeachers: json.data.stats.totalTeachers || 0,
+                    riskFilledRatio: json.data.stats.riskFilledRatio || 0
+                  });
+                }
+              })
+              .catch(() => {})
+              .finally(() => setIsLoading(false));
+            return;
+          }
+          setIsLoading(false);
+          return;
+        }
+      } catch (e) {}
+    }
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
         try {

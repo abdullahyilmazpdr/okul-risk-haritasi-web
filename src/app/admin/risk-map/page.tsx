@@ -191,22 +191,30 @@ const RISK_CATEGORIES_GUIDE: RiskCategoryConfig[] = [
 ];
 
 export default function AdminRiskMapPage() {
-  const [activeTab, setActiveTab] = useState<'analytics' | 'interventions' | 'matrix'>('analytics');
+  const [activeTab, setActiveTab] = useState<'analytics' | 'missing' | 'interventions' | 'matrix'>('analytics');
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedClassFilter, setSelectedClassFilter] = useState('ALL');
   const [selectedRiskItemFilter, setSelectedRiskItemFilter] = useState<number | 'ALL'>('ALL');
   const [studentSearchTerm, setStudentSearchTerm] = useState('');
+  const [missingClassFilter, setMissingClassFilter] = useState('ALL');
+  const [missingSearchTerm, setMissingSearchTerm] = useState('');
   const [isExporting, setIsExporting] = useState(false);
   const [isExportingDetailed, setIsExportingDetailed] = useState(false);
+  const [isExportingMissing, setIsExportingMissing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [classRows, setClassRows] = useState<any[]>([]);
   const [totals, setTotals] = useState<number[]>([]);
   const [riskStudents, setRiskStudents] = useState<Array<{ number: string; name: string; className: string; risks: number[] }>>([]);
+  const [missingStudents, setMissingStudents] = useState<Array<{ number: string; name: string; className: string; classTeacher: string; isZeroEntryClass: boolean }>>([]);
+  const [zeroEntryClasses, setZeroEntryClasses] = useState<Array<{ orderNo: number; className: string; studentCount: number; classTeacher: string }>>([]);
   const [stats, setStats] = useState({
     totalStudents: 0,
     totalTeachers: 0,
     evaluatedStudentsCount: 0,
+    missingStudentsCount: 0,
+    zeroEntryClassCount: 0,
+    totalClasses: 0,
     riskStudentCount: 0
   });
   const [currentYear, setCurrentYear] = useState('2025-2026');
@@ -237,11 +245,20 @@ export default function AdminRiskMapPage() {
         if (Array.isArray(data.riskStudents)) {
           setRiskStudents(data.riskStudents);
         }
+        if (Array.isArray(data.missingStudents)) {
+          setMissingStudents(data.missingStudents);
+        }
+        if (Array.isArray(data.zeroEntryClasses)) {
+          setZeroEntryClasses(data.zeroEntryClasses);
+        }
         if (data.stats) {
           setStats({
             totalStudents: data.stats.totalStudents || 0,
             totalTeachers: data.stats.totalTeachers || 0,
             evaluatedStudentsCount: data.stats.evaluatedStudentsCount || 0,
+            missingStudentsCount: data.stats.missingStudentsCount ?? (data.missingStudents?.length || 0),
+            zeroEntryClassCount: data.stats.zeroEntryClassCount ?? (data.zeroEntryClasses?.length || 0),
+            totalClasses: data.stats.totalClasses ?? (data.classRows?.length || 0),
             riskStudentCount: data.stats.riskStudentCount || 0
           });
         }
@@ -368,6 +385,82 @@ export default function AdminRiskMapPage() {
       return true;
     });
   }, [riskStudents, selectedClassFilter, selectedRiskItemFilter, studentSearchTerm]);
+
+  // Filtrelenmiş Girişi Yapılmamış (Eksik) Öğrenciler
+  const filteredMissingStudents = useMemo(() => {
+    return missingStudents.filter(st => {
+      if (missingClassFilter === 'ZERO_ONLY') {
+        if (!st.isZeroEntryClass) return false;
+      } else if (missingClassFilter !== 'ALL' && st.className !== missingClassFilter) {
+        return false;
+      }
+      if (missingSearchTerm.trim()) {
+        const q = missingSearchTerm.toLowerCase().trim();
+        const matchName = (st.name || '').toLowerCase().includes(q);
+        const matchNum = String(st.number || '').toLowerCase().includes(q);
+        const matchCls = (st.className || '').toLowerCase().includes(q);
+        const matchTeacher = (st.classTeacher || '').toLowerCase().includes(q);
+        if (!matchName && !matchNum && !matchCls && !matchTeacher) return false;
+      }
+      return true;
+    });
+  }, [missingStudents, missingClassFilter, missingSearchTerm]);
+
+  const handleExportMissingExcel = async () => {
+    setIsExportingMissing(true);
+    const toastId = toast.loading('Eksik Sınıf ve Öğrenci Takip Raporu hazırlanıyor...');
+    try {
+      const XLSX = await import('xlsx');
+      const academicYear = getCurrentAcademicYear();
+      const wb = XLSX.utils.book_new();
+
+      // 1. Sayfa: Sınıf Bazlı Giriş Durumu ve Hiç Giriş Yapılmamış Sınıflar
+      const classStatusRows = classRows.map((r, idx) => {
+        const entered = r.enteredStudentCount ?? 0;
+        const total = r.studentCount ?? 0;
+        const missing = r.missingStudentCount ?? Math.max(0, total - entered);
+        const pct = total > 0 ? Math.round((entered / total) * 100) : 0;
+        return {
+          "Sıra No": idx + 1,
+          "Sınıf / Şube": r.className,
+          "Sınıf Rehber Öğretmeni": r.classTeacher || 'Belirlenmedi',
+          "Toplam Öğrenci": total,
+          "Girişi Yapılan Öğrenci": entered,
+          "Girişi Yapılmayan (Eksik) Öğrenci": missing,
+          "Tamamlanma Oranı (%)": `%${pct}`,
+          "Sınıf Giriş Durumu": entered === 0 ? "HİÇ GİRİŞ YAPILMADI" : missing > 0 ? "EKSİK ÖĞRENCİ VAR" : "TAMAMLANDI"
+        };
+      });
+      const wsClasses = XLSX.utils.json_to_sheet(classStatusRows);
+      XLSX.utils.book_append_sheet(wb, wsClasses, "1-Sinif Giris Durumlari");
+
+      // 2. Sayfa: Girişi Yapılmamış Öğrenciler Listesi
+      const missingStudentRows = filteredMissingStudents.map((st, idx) => ({
+        "Sıra No": idx + 1,
+        "Öğrenci No": st.number,
+        "Adı Soyadı": st.name,
+        "Sınıfı / Şubesi": st.className,
+        "Sınıf Rehber Öğretmeni": st.classTeacher || 'Belirlenmedi',
+        "Sınıf Durumu": st.isZeroEntryClass ? "Hiç Giriş Yapılmamış Sınıf" : "Kısmi Giriş Yapılmış Sınıf",
+        "Öğrenci Durumu": "Girişi Yapılmadı (Bekliyor)"
+      }));
+      const wsMissingStudents = XLSX.utils.json_to_sheet(
+        missingStudentRows.length > 0
+          ? missingStudentRows
+          : [{ Bilgilendirme: "Tüm öğrencilerin veri girişi tamamlanmıştır." }]
+      );
+      XLSX.utils.book_append_sheet(wb, wsMissingStudents, "2-Girisi Yapilmayan Ogrenciler");
+
+      XLSX.writeFile(wb, `${academicYear}_Eksik_Sinif_ve_Ogrenci_Takip_Listesi.xlsx`);
+      toast.dismiss(toastId);
+      toast.success('Eksik Sınıf ve Öğrenci Takip Listesi Excel olarak indirildi!');
+    } catch (err: any) {
+      toast.dismiss(toastId);
+      toast.error('Excel oluşturulurken hata: ' + err.message);
+    } finally {
+      setIsExportingMissing(false);
+    }
+  };
 
   const handleSyncToSheets = async () => {
     const storedSpreadsheetId = typeof window !== 'undefined' ? localStorage.getItem('active_spreadsheet_id') : null;
@@ -642,6 +735,44 @@ export default function AdminRiskMapPage() {
         </div>
       </div>
 
+      {/* Eksik Veri Girişi (Hiç Giriş Yapılmamış Sınıflar & Öğrenciler) Hızlı Uyarı Bandı */}
+      {(zeroEntryClasses.length > 0 || missingStudents.length > 0) && (
+        <div className="bg-gradient-to-r from-rose-50 via-amber-50 to-orange-50 border border-rose-200 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
+          <div className="flex items-start gap-3">
+            <div className="p-2.5 bg-rose-100 text-rose-700 rounded-xl shrink-0 mt-0.5">
+              <AlertTriangle className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-sm font-bold text-rose-950">
+                  Veri Girişi Eksiklik Takibi:
+                </h2>
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-rose-600 text-white">
+                  {zeroEntryClasses.length} Hiç Giriş Yapılmamış Sınıf
+                </span>
+                <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-amber-600 text-white">
+                  {missingStudents.length} Girişi Yapılmamış Öğrenci
+                </span>
+              </div>
+              <p className="text-xs text-rose-800 mt-1">
+                Okuldaki toplam {stats.totalClasses || classRows.length} şubeden{' '}
+                <strong>{zeroEntryClasses.length} şubede henüz hiçbir öğrenci girişi yapılmamıştır</strong>. Toplam{' '}
+                <strong>{missingStudents.length} öğrencinin</strong> değerlendirme / gün / görüş kaydı beklenmektedir.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('missing')}
+            className="shrink-0 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center gap-2 transition-colors shadow-xs"
+          >
+            <ClipboardList className="w-4 h-4" />
+            Eksik Sınıf ve Öğrencileri Gör &rarr;
+          </button>
+        </div>
+      )}
+
       {/* Sekme (Tab) Seçici */}
       <div className="bg-white p-2 rounded-2xl border border-slate-200 shadow-xs flex flex-wrap items-center gap-2">
         <button
@@ -659,6 +790,30 @@ export default function AdminRiskMapPage() {
 
         <button
           type="button"
+          onClick={() => setActiveTab('missing')}
+          className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
+            activeTab === 'missing'
+              ? 'bg-rose-600 text-white shadow-xs'
+              : 'text-rose-700 bg-rose-50/70 hover:bg-rose-100 border border-rose-200/80'
+          }`}
+        >
+          <AlertTriangle className="w-4 h-4" />
+          2. Eksiklik Takibi (Giriş Yapılmamış Sınıflar & Öğrenciler)
+          {(zeroEntryClasses.length > 0 || missingStudents.length > 0) && (
+            <span
+              className={`text-[11px] font-extrabold px-2 py-0.5 rounded-full ${
+                activeTab === 'missing'
+                  ? 'bg-white text-rose-700'
+                  : 'bg-rose-600 text-white'
+              }`}
+            >
+              {zeroEntryClasses.length} Sınıf / {missingStudents.length} Öğr.
+            </span>
+          )}
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveTab('interventions')}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all ${
             activeTab === 'interventions'
@@ -667,7 +822,7 @@ export default function AdminRiskMapPage() {
           }`}
         >
           <HeartHandshake className="w-4 h-4" />
-          2. Risk Grubu Öğrencilerine Yönelik Yapılacak Çalışmalar (Rehber)
+          3. Risk Grubu Öğrencilerine Yönelik Yapılacak Çalışmalar (Rehber)
         </button>
 
         <button
@@ -680,7 +835,7 @@ export default function AdminRiskMapPage() {
           }`}
         >
           <Table className="w-4 h-4" />
-          3. Resmi MEB Konsolide Risk Matrisi (36 Madde Tablosu)
+          4. Resmi MEB Konsolide Risk Matrisi (36 Madde Tablosu)
         </button>
       </div>
 
@@ -1011,7 +1166,386 @@ export default function AdminRiskMapPage() {
         </div>
       )}
 
-      {/* SEKME 2: RİSK GRUBU ÖĞRENCİLERİNE YÖNELİK YAPILACAK ÇALIŞMALAR VE MÜDAHALE REHBERİ */}
+      {/* SEKME 2: EKSİKLİK TAKİBİ (HİÇ GİRİŞ YAPILMAMIŞ SINIFLAR VE GİRİŞİ YAPILMAMIŞ ÖĞRENCİLER) */}
+      {activeTab === 'missing' && (
+        <div className="space-y-6">
+          {/* Üst Bilgi ve Excel İndirme Kartı */}
+          <div className="bg-gradient-to-r from-rose-50 to-orange-50 border border-rose-200 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h2 className="text-base font-bold text-rose-950 flex items-center gap-2">
+                <AlertTriangle className="w-5 h-5 text-rose-600" />
+                Hiç Giriş Yapılmamış Sınıflar ve Girişi Yapılmamış Öğrenci Takip Modülü
+              </h2>
+              <p className="text-xs text-rose-800 leading-relaxed">
+                Okulunuzdaki sınıfların ve öğrencilerin veri giriş (Risk Haritası, Grup Eğitimi Gün Kaydı veya ŞÖK Görüşü) durumlarını buradan anlık takip edebilir; hiç giriş yapılmamış sınıfları ve henüz değerlendirilmemiş öğrencileri tespit ederek Excel listesi olarak indirebilirsiniz.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={handleExportMissingExcel}
+              disabled={isExportingMissing}
+              className="shrink-0 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white text-xs font-bold px-4 py-2.5 rounded-xl flex items-center gap-2 shadow-xs transition-colors"
+            >
+              <Download className="w-4 h-4" />
+              {isExportingMissing ? 'Hazırlanıyor...' : 'Eksik Sınıf & Öğrenci Listesini Excel İndir'}
+            </button>
+          </div>
+
+          {/* 4'lü Eksiklik Takip Özet Kartları */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-rose-200 shadow-xs">
+              <span className="text-xs font-bold text-rose-700 uppercase tracking-wider">Hiç Giriş Yapılmamış Sınıf</span>
+              <div className="flex items-baseline gap-2 mt-1">
+                <span className="text-2xl font-extrabold text-rose-600">{zeroEntryClasses.length}</span>
+                <span className="text-xs font-semibold text-slate-500">/ {classRows.length} Şube</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1.5">
+                Hiçbir öğrencisine kayıt girilmemiş şubeler
+              </p>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-amber-200 shadow-xs">
+              <span className="text-xs font-bold text-amber-700 uppercase tracking-wider">Girişi Yapılmamış Öğrenci</span>
+              <div className="flex items-baseline gap-2 mt-1">
+                <span className="text-2xl font-extrabold text-amber-600">{missingStudents.length}</span>
+                <span className="text-xs font-semibold text-slate-500">/ {stats.totalStudents} Öğrenci</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1.5">
+                Değerlendirme veya gün kaydı bekleyen öğrenciler
+              </p>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-emerald-200 shadow-xs">
+              <span className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Girişi Tamamlanan Öğrenci</span>
+              <div className="flex items-baseline gap-2 mt-1">
+                <span className="text-2xl font-extrabold text-emerald-600">{stats.evaluatedStudentsCount}</span>
+                <span className="text-xs font-semibold text-slate-500">
+                  (%{stats.totalStudents > 0 ? Math.round((stats.evaluatedStudentsCount / stats.totalStudents) * 100) : 0})
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1.5">
+                En az bir kayıt / görüş / gün girilmiş öğrenciler
+              </p>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-indigo-200 shadow-xs">
+              <span className="text-xs font-bold text-indigo-700 uppercase tracking-wider">Tamamlanan Sınıflar</span>
+              <div className="flex items-baseline gap-2 mt-1">
+                <span className="text-2xl font-extrabold text-indigo-600">
+                  {classRows.filter(r => (r.studentCount || 0) > 0 && (r.missingStudentCount ?? 0) === 0).length}
+                </span>
+                <span className="text-xs font-semibold text-slate-500">/ {classRows.length} Şube</span>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-1.5">
+                Tüm öğrencilerinin girişi biten şubeler
+              </p>
+            </div>
+          </div>
+
+          {/* 1. BÖLÜM: HİÇ GİRİŞ YAPILMAMIŞ SINIFLAR LİSTESİ VE SINIF BAZLI İLERLEME */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Sol: Hiç Giriş Yapılmamış Sınıflar */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-rose-600" />
+                    Hiç Giriş Yapılmamış Sınıflar ({zeroEntryClasses.length} Şube)
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Henüz tek bir öğrencisi bile değerlendirilmemiş sınıflar ve sınıf rehber öğretmenleri
+                  </p>
+                </div>
+                {zeroEntryClasses.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setMissingClassFilter(prev => (prev === 'ZERO_ONLY' ? 'ALL' : 'ZERO_ONLY'))
+                    }
+                    className={`text-xs font-bold px-3 py-1.5 rounded-xl border transition-colors ${
+                      missingClassFilter === 'ZERO_ONLY'
+                        ? 'bg-rose-600 text-white border-rose-600'
+                        : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                    }`}
+                  >
+                    {missingClassFilter === 'ZERO_ONLY' ? 'Tüm Eksikleri Göster' : 'Sadece Bu Sınıfları Filtrele'}
+                  </button>
+                )}
+              </div>
+
+              {zeroEntryClasses.length === 0 ? (
+                <div className="p-8 text-center bg-emerald-50 border border-emerald-200 rounded-xl space-y-2">
+                  <CheckCircle2 className="w-8 h-8 text-emerald-600 mx-auto" />
+                  <div className="text-sm font-bold text-emerald-950">
+                    Hiç Giriş Yapılmamış Sınıf Bulunmuyor!
+                  </div>
+                  <p className="text-xs text-emerald-700">
+                    Okuldaki tüm şubelerde en az bir öğrenci için veri girişi yapılmıştır.
+                  </p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[420px] overflow-y-auto pr-1 scrollbar-thin">
+                  {zeroEntryClasses.map((zc) => {
+                    const isSelected = missingClassFilter === zc.className;
+                    return (
+                      <button
+                        type="button"
+                        key={zc.orderNo}
+                        onClick={() =>
+                          setMissingClassFilter(prev => (prev === zc.className ? 'ALL' : zc.className))
+                        }
+                        className={`text-left p-4 rounded-xl border transition-all flex flex-col justify-between gap-2 ${
+                          isSelected
+                            ? 'bg-rose-100/90 border-rose-500 ring-2 ring-rose-200'
+                            : 'bg-rose-50/50 border-rose-200 hover:bg-rose-50'
+                        }`}
+                      >
+                        <div>
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-sm text-rose-950">{zc.className}</span>
+                            <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-rose-600 text-white shrink-0">
+                              0 / {zc.studentCount} Girildi
+                            </span>
+                          </div>
+                          <div className="text-xs text-rose-800 mt-1.5 font-medium">
+                            Sınıf Öğrt: <strong>{zc.classTeacher}</strong>
+                          </div>
+                        </div>
+                        <div className="text-[11px] text-rose-600 font-semibold flex items-center justify-between pt-2 border-t border-rose-200/60">
+                          <span>{zc.studentCount} Öğrenci Bekliyor</span>
+                          <span className="underline">Öğrencileri Gör &rarr;</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {/* Sağ: Tüm Sınıfların Veri Giriş Tamamlanma Durumu */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <School className="w-4 h-4 text-indigo-600" />
+                  Sınıf Bazlı Veri Giriş İlerleme Tablosu
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Bir sınıfa tıklayarak o sınıftaki girişi yapılmamış öğrencileri aşağıda listeleyebilirsiniz.
+                </p>
+              </div>
+
+              <div className="overflow-x-auto max-h-[420px] scrollbar-thin border border-slate-200 rounded-xl">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 sticky top-0 z-10">
+                      <th className="p-3">Sınıf / Şube & Öğretmen</th>
+                      <th className="p-3 text-center">Girilen</th>
+                      <th className="p-3 text-center">Eksik</th>
+                      <th className="p-3">İlerleme Durumu</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {classRows
+                      .slice()
+                      .sort((a, b) => {
+                        const aMissing = a.missingStudentCount ?? (a.studentCount || 0);
+                        const bMissing = b.missingStudentCount ?? (b.studentCount || 0);
+                        const aZero = (a.enteredStudentCount ?? 0) === 0 ? 1 : 0;
+                        const bZero = (b.enteredStudentCount ?? 0) === 0 ? 1 : 0;
+                        if (aZero !== bZero) return bZero - aZero;
+                        return bMissing - aMissing;
+                      })
+                      .map((row) => {
+                        const total = row.studentCount || 0;
+                        const entered = row.enteredStudentCount ?? 0;
+                        const missing = row.missingStudentCount ?? Math.max(0, total - entered);
+                        const pct = total > 0 ? Math.round((entered / total) * 100) : 0;
+                        const isSelected = missingClassFilter === row.className;
+
+                        return (
+                          <tr
+                            key={row.orderNo}
+                            onClick={() =>
+                              setMissingClassFilter(prev => (prev === row.className ? 'ALL' : row.className))
+                            }
+                            className={`cursor-pointer transition-colors ${
+                              isSelected ? 'bg-rose-50/90' : 'hover:bg-slate-50'
+                            }`}
+                          >
+                            <td className="p-3">
+                              <div className="font-bold text-slate-900">{row.className}</div>
+                              <div className="text-[10px] text-slate-500">Rehber: {row.classTeacher}</div>
+                            </td>
+                            <td className="p-3 text-center font-mono font-bold text-emerald-700">
+                              {entered} / {total}
+                            </td>
+                            <td className="p-3 text-center">
+                              <span
+                                className={`font-mono font-bold px-2 py-0.5 rounded-full text-[11px] ${
+                                  missing > 0
+                                    ? entered === 0
+                                      ? 'bg-rose-100 text-rose-800 border border-rose-200'
+                                      : 'bg-amber-100 text-amber-800 border border-amber-200'
+                                    : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                }`}
+                              >
+                                {missing > 0 ? `${missing} Eksik` : 'Tamam'}
+                              </span>
+                            </td>
+                            <td className="p-3 min-w-[140px]">
+                              <div className="flex items-center justify-between text-[10px] font-bold mb-1">
+                                <span
+                                  className={
+                                    entered === 0
+                                      ? 'text-rose-600'
+                                      : missing > 0
+                                      ? 'text-amber-700'
+                                      : 'text-emerald-700'
+                                  }
+                                >
+                                  {entered === 0
+                                    ? 'Hiç Girilmedi'
+                                    : missing > 0
+                                    ? 'Kısmi Giriş'
+                                    : 'Tamamlandı'}
+                                </span>
+                                <span className="font-mono text-slate-700">%{pct}</span>
+                              </div>
+                              <div className="w-full h-2 bg-slate-200 rounded-full overflow-hidden">
+                                <div
+                                  className={`h-full rounded-full transition-all ${
+                                    entered === 0
+                                      ? 'bg-rose-500'
+                                      : missing > 0
+                                      ? 'bg-amber-500'
+                                      : 'bg-emerald-500'
+                                  }`}
+                                  style={{ width: `${Math.max(entered === 0 ? 4 : 0, pct)}%` }}
+                                />
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          {/* 2. BÖLÜM: GİRİŞİ YAPILMAMIŞ ÖĞRENCİLER DETAYLI LİSTESİ */}
+          <div className="bg-white rounded-2xl border border-slate-200 p-6 shadow-xs space-y-4">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+              <div>
+                <h3 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                  <Users className="w-4 h-4 text-rose-600" />
+                  Girişi Yapılmamış Öğrenciler Listesi ({filteredMissingStudents.length} Öğrenci)
+                </h3>
+                <p className="text-xs text-slate-500">
+                  E-Tabloda henüz Risk Haritası, Grup Eğitimi Gün Kaydı veya ŞÖK Görüşü bulunmayan öğrencilerin tam listesi
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* Öğrenci veya Öğretmen Arama */}
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={missingSearchTerm}
+                    onChange={(e) => setMissingSearchTerm(e.target.value)}
+                    placeholder="Öğrenci adı, no veya öğretmen ara..."
+                    className="pl-8 pr-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:outline-none min-w-[220px]"
+                  />
+                </div>
+
+                {/* Sınıf Filtresi */}
+                <select
+                  value={missingClassFilter}
+                  onChange={(e) => setMissingClassFilter(e.target.value)}
+                  className="px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-rose-500 focus:outline-none max-w-[260px]"
+                >
+                  <option value="ALL">Tüm Eksik Öğrenciler ({missingStudents.length})</option>
+                  <option value="ZERO_ONLY">
+                    Sadece Hiç Giriş Yapılmamış Sınıflar ({zeroEntryClasses.length} Şube)
+                  </option>
+                  {classRows
+                    .filter(r => (r.missingStudentCount ?? 0) > 0)
+                    .map((r) => (
+                      <option key={r.orderNo} value={r.className}>
+                        {r.className} ({r.missingStudentCount} Eksik)
+                      </option>
+                    ))}
+                </select>
+
+                {(missingClassFilter !== 'ALL' || missingSearchTerm) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMissingClassFilter('ALL');
+                      setMissingSearchTerm('');
+                    }}
+                    className="text-xs font-semibold text-rose-600 hover:underline px-2 py-1"
+                  >
+                    Filtreyi Temizle
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {filteredMissingStudents.length === 0 ? (
+              <div className="p-8 text-center bg-emerald-50/70 rounded-xl border border-emerald-200 text-xs text-emerald-800 font-medium">
+                Seçilen kriterlere göre girişi yapılmamış öğrenci bulunmamaktadır.
+              </div>
+            ) : (
+              <div className="overflow-x-auto max-h-[520px] scrollbar-thin border border-slate-200 rounded-xl">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200 sticky top-0 z-10">
+                      <th className="p-3 whitespace-nowrap">Sıra</th>
+                      <th className="p-3 whitespace-nowrap">Öğrenci No</th>
+                      <th className="p-3 whitespace-nowrap">Adı Soyadı</th>
+                      <th className="p-3 whitespace-nowrap">Sınıfı / Şubesi</th>
+                      <th className="p-3 whitespace-nowrap">Sınıf Rehber Öğretmeni</th>
+                      <th className="p-3 text-center whitespace-nowrap">Sınıf Durumu</th>
+                      <th className="p-3 text-center whitespace-nowrap">Öğrenci Durumu</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {filteredMissingStudents.map((st, idx) => (
+                      <tr key={`${st.number}_${st.className}_${idx}`} className="hover:bg-slate-50">
+                        <td className="p-3 font-mono text-slate-500 whitespace-nowrap">{idx + 1}</td>
+                        <td className="p-3 font-mono font-bold text-slate-800 whitespace-nowrap">{st.number}</td>
+                        <td className="p-3 font-bold text-slate-900 whitespace-nowrap">{st.name}</td>
+                        <td className="p-3 font-semibold text-indigo-700 whitespace-nowrap">{st.className}</td>
+                        <td className="p-3 text-slate-700 whitespace-nowrap">{st.classTeacher}</td>
+                        <td className="p-3 text-center whitespace-nowrap">
+                          {st.isZeroEntryClass ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                              Hiç Giriş Yapılmamış Sınıf
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                              Kısmi Giriş Yapılmış Sınıf
+                            </span>
+                          )}
+                        </td>
+                        <td className="p-3 text-center whitespace-nowrap">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                            Giriş Bekliyor
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* SEKME 3: RİSK GRUBU ÖĞRENCİLERİNE YÖNELİK YAPILACAK ÇALIŞMALAR VE MÜDAHALE REHBERİ */}
       {activeTab === 'interventions' && (
         <div className="space-y-6">
           <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-2xl p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">

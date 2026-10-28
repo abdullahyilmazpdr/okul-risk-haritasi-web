@@ -334,11 +334,13 @@ function StudentDetailsContent() {
   };
 
   const handleSave = async () => {
-    // Sınıf Öğretmeni için kontrol
-    if (isClassTeacher && selectedRisks.size === 0 && !sokOpinion.trim()) {
-      toast.error('Lütfen risk maddelerini işaretleyin ve ŞÖK görüşünüzü girin.');
+    // Grup eğitimine hazırlık açılmış ancak hiç gün seçilmemişse uyar
+    if (!isSubjectTeacher && isGroupTraining && groupDays.length === 0) {
+      toast.error('Grup eğitimine hazırlık seçildi. Lütfen öğrencinin geleceği en az bir günü işaretleyin.');
       return;
     }
+
+    // Sınıf Öğretmeni ve İdareciler risk seçmeden de (ör. sadece Grup Eğitimine Hazırlık gün kaydı, ŞÖK görüşü veya "Risk Yok" değerlendirmesi olarak) kayıt yapabilir.
 
     // Ders Öğretmeni için kontrol
     if (isSubjectTeacher && !sokOpinion.trim()) {
@@ -427,8 +429,10 @@ function StudentDetailsContent() {
 
       toast.dismiss(saveToast);
       toast.success(
-        isClassTeacher 
-          ? `${student.name} için Risk Haritası ve ŞÖK görüşünüz başarıyla E-Tabloya kaydedildi!`
+        !isSubjectTeacher
+          ? selectedRisks.size === 0 && activeGroupDays.length > 0 && !sokOpinion.trim()
+            ? `${student.name} için Grup Eğitimine Hazırlık gün kaydı (${activeGroupDays.join(', ')}) başarıyla E-Tabloya kaydedildi!`
+            : `${student.name} için bilgiler (Risk / Gün Kaydı / ŞÖK Görüşü) başarıyla E-Tabloya kaydedildi!`
           : `${student.name} için ŞÖK görüşünüz başarıyla E-Tabloya kaydedildi!`
       );
     } catch (err: any) {
@@ -491,7 +495,7 @@ function StudentDetailsContent() {
             className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white px-6 py-2.5 rounded-xl font-semibold flex items-center gap-2 transition-colors shadow-sm"
           >
             <Save className="w-4 h-4" />
-            {isSaving ? 'Kaydediliyor...' : 'Görüşümü Kaydet'}
+            {isSaving ? 'Kaydediliyor...' : !isSubjectTeacher ? 'Bilgileri / Görüşü Kaydet' : 'Görüşümü Kaydet'}
           </button>
         </div>
       </div>
@@ -510,7 +514,9 @@ function StudentDetailsContent() {
                   </div>
                   <div>
                     <h2 className="text-lg font-bold text-slate-900">MEB Okul Risk Haritası (36 Madde)</h2>
-                    <p className="text-xs text-slate-400">Tüm riskler aşağıda tek seferde listelenmiştir.</p>
+                    <p className="text-xs text-slate-400">
+                      Risk faktörü bulunmuyorsa işaretleme yapmadan doğrudan <strong>Gün Kaydı</strong> veya <strong>ŞÖK Görüşü</strong> kaydedebilirsiniz.
+                    </p>
                   </div>
                 </div>
                 <span className={`text-xs font-bold px-3 py-1 rounded-full border ${
@@ -816,9 +822,20 @@ function StudentDetailsContent() {
                   </div>
 
                   {groupDays.length > 0 && (
-                    <p className="text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
-                      📌 Öğrenci haftalık <strong>{groupDays.join(', ')}</strong> günlerinde grup eğitimine hazırlık için gelecektir.
-                    </p>
+                    <div className="space-y-2.5">
+                      <p className="text-[11px] text-slate-500 bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                        📌 Öğrenci haftalık <strong>{groupDays.join(', ')}</strong> günlerinde grup eğitimine hazırlık için gelecektir.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={handleSave}
+                        disabled={isSaving}
+                        className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-2.5 px-4 rounded-xl text-xs font-bold flex items-center justify-center gap-2 transition-colors shadow-xs"
+                      >
+                        <Save className="w-3.5 h-3.5" />
+                        {isSaving ? 'Kaydediliyor...' : 'Risk Seçmeden Sadece Gün / Bilgileri Kaydet'}
+                      </button>
+                    </div>
                   )}
                 </div>
               )}

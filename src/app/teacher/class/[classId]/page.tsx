@@ -239,12 +239,17 @@ function ClassDetailsContent() {
             try {
               const parsed = JSON.parse(evalRaw);
               if (Array.isArray(parsed.risks)) rCount = parsed.risks.length;
-              if (Array.isArray(parsed.groupTrainingDays)) gDays = parsed.groupTrainingDays;
+              if (Array.isArray(parsed.groupTrainingDays)) {
+                gDays = parsed.groupTrainingDays;
+                if (gDays.length > 0) myFilled = true;
+              }
               if (parsed.opinions && typeof parsed.opinions === 'object') {
                 for (const [uKey, opObj] of Object.entries<any>(parsed.opinions)) {
+                  if (uKey.toLowerCase().trim() === tUser) {
+                    myFilled = true;
+                  }
                   if (opObj?.opinion && opObj.opinion.trim()) {
                     opCount++;
-                    if (uKey.toLowerCase().trim() === tUser) myFilled = true;
                   }
                 }
               }
@@ -255,12 +260,12 @@ function ClassDetailsContent() {
           if (opJson?.success && Array.isArray(opJson.opinions)) {
             const studentOps = opJson.opinions.filter((o: any) => String(o.studentNumber).trim() === sNum);
             for (const op of studentOps) {
+              const opTeacher = (op.teacherName || '').toLowerCase().trim();
+              if (opTeacher === tName || opTeacher === tUser) {
+                myFilled = true;
+              }
               if (op.opinion && op.opinion.trim()) {
                 opCount++;
-                const opTeacher = (op.teacherName || '').toLowerCase().trim();
-                if (opTeacher === tName || opTeacher === tUser) {
-                  myFilled = true;
-                }
               }
               if (Array.isArray(op.risks) && op.risks.length > 0) {
                 rCount = Math.max(rCount, op.risks.length);

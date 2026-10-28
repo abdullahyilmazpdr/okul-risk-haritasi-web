@@ -188,7 +188,7 @@ export async function GET(req: NextRequest) {
             date: r.date,
             groupTrainingDays: r.groupTrainingDays || [],
             otherRiskNote: r.otherRiskNote || ''
-          })).filter(o => o.opinion || (o.risks && o.risks.length > 0) || (o.groupTrainingDays && o.groupTrainingDays.length > 0) || o.otherRiskNote);
+          })).filter(o => o.studentNumber);
 
           return NextResponse.json({
             success: true,
@@ -415,12 +415,14 @@ export async function POST(req: NextRequest) {
       await clearSheetRange(accessToken, spreadsheetId, `OkulRisk!A${cleanSheetRows.length + 1}:J${rawRows.length + 5}`);
     }
 
-    // KVKK Denetim İzi: Risk veya Görüş girişini arka planda kaydet
+    // KVKK Denetim İzi: Risk, Gün Kaydı veya Görüş girişini arka planda kaydet
     const clientIp = req.headers.get('x-forwarded-for')?.split(',')[0].trim() || req.headers.get('x-real-ip') || 'İstemci';
     const actionType = isCounselorOrAdmin && risksToSave.length > 0 ? 'RISK_KAYIT' : 'GORUS_KAYIT';
     const detailMsg = actionType === 'RISK_KAYIT' 
-      ? `${risksToSave.length} risk maddesi ve görüş kaydedildi` 
-      : 'ŞÖK öğretmen görüşü kaydedildi';
+      ? `${risksToSave.length} risk maddesi${groupDaysToSave.length > 0 ? `, grup günleri (${groupDaysToSave.join(', ')})` : ''} ve görüş kaydedildi` 
+      : groupDaysToSave.length > 0
+      ? `Risksiz grup eğitimi gün kaydı (${groupDaysToSave.join(', ')}) / değerlendirme kaydedildi`
+      : 'ŞÖK öğretmen görüşü / öğrenci değerlendirmesi kaydedildi';
 
     logAuditEvent(accessToken, spreadsheetId, {
       performedBy: incomingTeacher,

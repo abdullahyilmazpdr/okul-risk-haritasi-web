@@ -82,6 +82,20 @@ function extractRecordFromRow(r: any[]) {
     sNum = sNum.slice(0, -2);
   }
 
+  let groupDays: string[] = [];
+  const rawGroupDays = r[colOffset + 8];
+  if (rawGroupDays) {
+    const str = String(rawGroupDays).trim();
+    if (str.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(str);
+        if (Array.isArray(parsed)) groupDays = parsed.map(String);
+      } catch (e) {}
+    } else if (str) {
+      groupDays = str.split(',').map(s => s.trim()).filter(Boolean);
+    }
+  }
+
   return {
     num: sNum,
     name: String(r[colOffset + 1] || '').trim(),
@@ -90,7 +104,8 @@ function extractRecordFromRow(r: any[]) {
     branch: String(r[colOffset + 4] || '').trim(),
     opinion: String(r[colOffset + 5] || '').trim(),
     risks: parseRisks(r[colOffset + 6]),
-    date: String(r[colOffset + 7] || '').trim()
+    date: String(r[colOffset + 7] || '').trim(),
+    groupTrainingDays: groupDays
   };
 }
 
@@ -190,13 +205,18 @@ export async function GET(req: NextRequest) {
       }));
     }
 
-    // 1. Öğrenci numarasına göre en güncel risk listesini haritala
+    // 1. Öğrenci numarasına göre en güncel risk listesini ve giriş durumunu haritala
     const studentRiskMap = new Map<string, number[]>();
+    const enteredStudentNumbers = new Set<string>();
     const opinionsList: any[] = [];
 
     for (const row of riskRows) {
       const rec = extractRecordFromRow(row);
       if (!rec) continue;
+
+      if (rec.num) {
+        enteredStudentNumbers.add(cleanTr(rec.num));
+      }
 
       if (rec.opinion) {
         opinionsList.push({
@@ -216,7 +236,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 2. Sınıfları tekilleştirerek belirle ve her sınıf için 36 risk maddesini say
+    // 2. Sınıfları tekilleştirerek belirle ve her sınıf için 36 risk maddesini ve giriş sayılarını say
     const rawClassNames = Array.from(new Set(students.map(s => s.className).filter(Boolean)));
     if (rawClassNames.length === 0) {
       rawClassNames.push(...FALLBACK_CLASSES.map(c => c.name));
@@ -232,6 +252,14 @@ export async function GET(req: NextRequest) {
       }
     }
     const uniqueClassNames = Array.from(classKeyMap.values());
+
+    const missingStudents: Array<{
+      number: string;
+      name: string;
+      className: string;
+      classTeacher: string;
+      isZeroEntryClass: boolean;
+    }> = [];
 
     const classRows = uniqueClassNames.map((className, idx) => {
       const targetKey = getClassBaseKey(className);
@@ -251,6 +279,30 @@ export async function GET(req: NextRequest) {
         ? Array.from(new Set(classTeacherObjs.map(t => t.name))).join(' / ')
         : 'Belirlenmedi';
 
+      let enteredStudentCount = 0;
+      const classMissingStudents: Array<{ number: string; name: string }> = [];
+
+      for (const st of classStudents) {
+        if (enteredStudentNumbers.has(cleanTr(st.number))) {
+          enteredStudentCount++;
+        } else {
+          classMissingStudents.push({ number: st.number, name: st.name });
+        }
+      }
+
+      const missingStudentCount = Math.max(0, studentCount - enteredStudentCount);
+      const isZeroEntry = enteredStudentCount === 0;
+
+      for (const mst of classMissingStudents) {
+        missingStudents.push({
+          number: mst.number,
+          name: mst.name,
+          className,
+          classTeacher,
+          isZeroEntryClass: isZeroEntry
+        });
+      }
+
       // 36 risk maddesi için öğrenci sayıları
       const risks = Array.from({ length: 36 }, (_, itemIdx) => {
         let count = 0;
@@ -267,10 +319,21 @@ export async function GET(req: NextRequest) {
         orderNo: idx + 1,
         className,
         studentCount,
+        enteredStudentCount,
+        missingStudentCount,
         classTeacher,
         risks
       };
     });
+
+    const zeroEntryClasses = classRows
+      .filter(r => r.enteredStudentCount === 0)
+      .map(r => ({
+        orderNo: r.orderNo,
+        className: r.className,
+        studentCount: r.studentCount,
+        classTeacher: r.classTeacher
+      }));
 
     // Toplam satırını hesapla
     const totals = Array.from({ length: 36 }, (_, colIdx) => {
@@ -291,11 +354,15 @@ export async function GET(req: NextRequest) {
       .filter(st => st.risks.length > 0)
       .sort((a, b) => b.risks.length - a.risks.length);
 
+    const evaluatedStudentsCount = students.filter(st => enteredStudentNumbers.has(cleanTr(st.number))).length;
+
     return NextResponse.json({
       success: true,
       classRows,
       totals,
       riskStudents,
+      missingStudents,
+      zeroEntryClasses,
       opinions: opinionsList,
       schoolInfo: {
         schoolName: schoolData?.schoolName || '',
@@ -305,7 +372,10 @@ export async function GET(req: NextRequest) {
       stats: {
         totalStudents: students.length,
         totalTeachers: teachers.length || 14,
-        evaluatedStudentsCount: studentRiskMap.size,
+        evaluatedStudentsCount,
+        missingStudentsCount: missingStudents.length,
+        zeroEntryClassCount: zeroEntryClasses.length,
+        totalClasses: classRows.length,
         riskStudentCount: riskStudents.length
       }
     });
