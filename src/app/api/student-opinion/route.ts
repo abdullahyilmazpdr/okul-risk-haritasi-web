@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFromSheet, updateSheetRange, clearSheetRange, ensureSheetExists } from '@/lib/sheets';
+import { readFromSheet, writeSheetRange, clearSheetRange, ensureSheetExists, markSheetTabVerified, getSystemServiceAccountCreds } from '@/lib/sheets';
 import { getLatestSchoolData } from '@/lib/db';
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit';
 import { logAuditEvent } from '@/lib/audit-logger';
@@ -137,10 +137,12 @@ export async function GET(req: NextRequest) {
       : searchParams.get('token');
 
     const schoolData = await getLatestSchoolData(schoolKey || undefined).catch(() => null);
+    const sysSa = getSystemServiceAccountCreds();
     const serverFallbackToken =
       schoolData?.serviceAccountKey ||
-      schoolData?.accessToken ||
+      (sysSa ? JSON.stringify(sysSa) : '') ||
       process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+      schoolData?.accessToken ||
       null;
 
     if (schoolData) {
@@ -238,10 +240,13 @@ export async function POST(req: NextRequest) {
       if (!tokenVerification.valid || !tokenVerification.payload) {
         return NextResponse.json({ error: tokenVerification.error || 'Geçersiz öğretmen oturum belirteci.' }, { status: 401 });
       }
-      // Yetkili öğretmen adı ve rolü doğrudan imzalı tokendan güvenceye alınır
+      // Yetkili öğretmen adı, rolü ve okul kodu doğrudan imzalı tokendan güvenceye alınır
       teacherName = tokenVerification.payload.name || teacherName;
       if (tokenVerification.payload.role) {
         branch = tokenVerification.payload.role;
+      }
+      if (!schoolKey && tokenVerification.payload.schoolKey) {
+        schoolKey = tokenVerification.payload.schoolKey;
       }
     }
 
@@ -250,16 +255,19 @@ export async function POST(req: NextRequest) {
     }
 
     const schoolData = await getLatestSchoolData(schoolKey || undefined).catch(() => null);
+    const sysSa = getSystemServiceAccountCreds();
     const serverFallbackToken =
       schoolData?.serviceAccountKey ||
-      schoolData?.accessToken ||
+      (sysSa ? JSON.stringify(sysSa) : '') ||
       process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+      schoolData?.accessToken ||
       '';
 
     if (schoolData) {
       if (!spreadsheetId) spreadsheetId = schoolData.spreadsheetId;
-      if (!accessToken) accessToken = serverFallbackToken;
-    } else if (!accessToken && serverFallbackToken) {
+      // Kalıcı sunucu Service Account anahtarı varsa her zaman onu tercih et (60 dk OAuth süresine takılmaz)
+      accessToken = serverFallbackToken || accessToken;
+    } else if (serverFallbackToken) {
       accessToken = serverFallbackToken;
     }
 
@@ -269,37 +277,36 @@ export async function POST(req: NextRequest) {
       }, { status: 400 });
     }
 
-    // Google Sheets 'OkulRisk' sayfasının var olduğundan ve başlık satırının A1'de olduğundan emin ol
-    await ensureSheetExists(accessToken, spreadsheetId, 'OkulRisk', RISK_SHEET_HEADERS);
-
     const now = new Date();
     const dateStr = now.toLocaleDateString('tr-TR') + ' ' + now.toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit' });
 
-    // Mevcut satırları oku
+    // Mevcut satırları oku ('OkulRisk' sayfası zaten varsa doğrudan okunur; yoksa otomatik oluşturulur)
     let rawRows: any[][] = [];
     try {
       rawRows = await readFromSheet(accessToken, spreadsheetId, 'OkulRisk!A:Z');
+      markSheetTabVerified(spreadsheetId, 'OkulRisk');
     } catch (e: any) {
-      if (serverFallbackToken && serverFallbackToken !== accessToken) {
+      const errMsg = (e?.message || '').toLowerCase();
+      if (errMsg.includes('not found') || errMsg.includes('unable to parse range')) {
+        await ensureSheetExists(accessToken, spreadsheetId, 'OkulRisk', RISK_SHEET_HEADERS);
+        rawRows = [];
+      } else if (serverFallbackToken && serverFallbackToken !== accessToken) {
         accessToken = serverFallbackToken;
         try {
           rawRows = await readFromSheet(accessToken, spreadsheetId, 'OkulRisk!A:Z');
+          markSheetTabVerified(spreadsheetId, 'OkulRisk');
         } catch (retryErr: any) {
-          const errMsg = (retryErr?.message || '').toLowerCase();
-          if (errMsg.includes('not found') || errMsg.includes('unable to parse range')) {
+          const retryMsg = (retryErr?.message || '').toLowerCase();
+          if (retryMsg.includes('not found') || retryMsg.includes('unable to parse range')) {
+            await ensureSheetExists(accessToken, spreadsheetId, 'OkulRisk', RISK_SHEET_HEADERS);
             rawRows = [];
           } else {
-            throw new Error('E-Tablo mevcut verileri okunamadı: ' + (retryErr?.message || 'Bağlantı hatası'));
+            throw retryErr;
           }
         }
       } else {
-        const errMsg = (e?.message || '').toLowerCase();
-        if (errMsg.includes('not found') || errMsg.includes('unable to parse range')) {
-          rawRows = [];
-        } else {
-          console.error('OkulRisk tablosu okunurken kritik hata:', e);
-          throw new Error('E-Tablo mevcut verileri okunamadı: ' + (e?.message || 'Bağlantı hatası'));
-        }
+        console.error('OkulRisk tablosu okunurken kritik hata:', e);
+        throw e;
       }
     }
 
@@ -407,8 +414,8 @@ export async function POST(req: NextRequest) {
       ])
     ];
 
-    // Temiz tabloyu A1'den itibaren nizami şekilde yaz (A'dan J'ye)
-    await updateSheetRange(accessToken, spreadsheetId, `OkulRisk!A1:J${cleanSheetRows.length}`, cleanSheetRows);
+    // Temiz tabloyu A1'den itibaren tek adımda nizami şekilde yaz (A'dan J'ye)
+    await writeSheetRange(accessToken, spreadsheetId, `OkulRisk!A1:J${cleanSheetRows.length}`, cleanSheetRows);
 
     // Eğer eski satır sayısı fazlaysa alt satırlardaki eski verileri temizle
     if (rawRows.length > cleanSheetRows.length && cleanSheetRows.length > 1) {
@@ -440,7 +447,13 @@ export async function POST(req: NextRequest) {
     });
   } catch (error: any) {
     console.error('E-Tabloya kayıt hatası:', error);
+    const code = Number(error?.code || error?.status || 0);
     const msg = (error?.message || '').toLowerCase();
+    if (code === 429 || msg.includes('quota') || msg.includes('rate limit') || msg.includes('too many requests')) {
+      return NextResponse.json({
+        error: 'Google E-Tablo yoğunluk sınırı aşıldı, lütfen birkaç saniye sonra tekrar deneyiniz.'
+      }, { status: 429 });
+    }
     if (msg.includes('invalid authentication') || msg.includes('401') || msg.includes('token') || msg.includes('credential')) {
       return NextResponse.json({ 
         error: 'Google E-Tablo yetki süresi dolmuş. Lütfen okul idarecisinin Yönetici Girişi yapmasını sağlayınız.' 

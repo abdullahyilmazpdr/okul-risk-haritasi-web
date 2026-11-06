@@ -1,4 +1,4 @@
-import { appendToSheet, ensureSheetExists } from './sheets';
+import { appendToSheet, ensureSheetExists, markSheetTabVerified } from './sheets';
 
 export const AUDIT_LOG_HEADERS = [
   'Tarih & Saat',
@@ -33,8 +33,6 @@ export async function logAuditEvent(
   try {
     if (!accessToken || !spreadsheetId) return;
 
-    await ensureSheetExists(accessToken, spreadsheetId, 'DenetimIzi', AUDIT_LOG_HEADERS);
-
     const now = new Date();
     const timestamp = now.toLocaleDateString('tr-TR') + ' ' + now.toLocaleTimeString('tr-TR', { 
       hour: '2-digit', 
@@ -53,7 +51,13 @@ export async function logAuditEvent(
       entry.ip || '-'
     ];
 
-    await appendToSheet(accessToken, spreadsheetId, 'DenetimIzi!A:H', [row]);
+    try {
+      await appendToSheet(accessToken, spreadsheetId, 'DenetimIzi!A:H', [row]);
+      markSheetTabVerified(spreadsheetId, 'DenetimIzi');
+    } catch (firstErr) {
+      await ensureSheetExists(accessToken, spreadsheetId, 'DenetimIzi', AUDIT_LOG_HEADERS);
+      await appendToSheet(accessToken, spreadsheetId, 'DenetimIzi!A:H', [row]);
+    }
   } catch (error) {
     console.warn('KVKK Denetim İzi kaydı oluşturulamadı:', error);
   }

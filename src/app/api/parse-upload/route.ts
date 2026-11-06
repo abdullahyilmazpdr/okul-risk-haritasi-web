@@ -11,7 +11,7 @@ import {
   deduplicateClasses,
   getClassBaseKey
 } from '@/lib/pdf-parser';
-import { updateSheetRange, readFromSheet, ensureSheetExists } from '@/lib/sheets';
+import { updateSheetRange, readFromSheet, ensureSheetExists, getSystemServiceAccountCreds } from '@/lib/sheets';
 import { getLatestSchoolData } from '@/lib/db';
 
 function normalizeTeacherKey(name: string): string {
@@ -48,10 +48,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const sysCreds = getSystemServiceAccountCreds();
     const serverFallbackToken =
       latestSchool?.serviceAccountKey ||
-      latestSchool?.accessToken ||
       process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+      (sysCreds ? JSON.stringify(sysCreds) : '') ||
+      latestSchool?.accessToken ||
       '';
 
     if (!spreadsheetId && latestSchool?.spreadsheetId) {

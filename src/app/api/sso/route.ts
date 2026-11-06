@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { getLatestSchoolData, getSchoolByKey } from '@/lib/db';
-import { readFromSheet } from '@/lib/sheets';
+import { readFromSheet, getSystemServiceAccountCreds } from '@/lib/sheets';
 import { generateTeacherToken } from '@/lib/session-token';
 import { deduplicateClasses } from '@/lib/pdf-parser';
 
@@ -76,7 +76,13 @@ export async function POST(req: NextRequest) {
 
     const schoolName = schoolData?.schoolName || 'Meram Özel Eğitim Uygulama Okulu III. Kademe';
     const spreadsheetId = schoolData?.spreadsheetId || '';
-    const accessToken = schoolData?.serviceAccountKey || schoolData?.accessToken || process.env.GOOGLE_SERVICE_ACCOUNT_KEY || '';
+    const sysCreds = getSystemServiceAccountCreds();
+    const accessToken =
+      schoolData?.serviceAccountKey ||
+      process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+      (sysCreds ? JSON.stringify(sysCreds) : '') ||
+      schoolData?.accessToken ||
+      '';
 
     let sheetStudents: any[] = [];
     let allTeachers: any[] = [];

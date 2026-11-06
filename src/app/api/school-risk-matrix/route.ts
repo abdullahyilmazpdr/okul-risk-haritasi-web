@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFromSheet, updateSheetRange, ensureSheetExists } from '@/lib/sheets';
+import { readFromSheet, updateSheetRange, ensureSheetExists, getSystemServiceAccountCreds } from '@/lib/sheets';
 import { MEB_OFFICIAL_RISK_ITEMS } from '@/lib/meb-risk-items';
 import { FALLBACK_STUDENTS, FALLBACK_CLASSES } from '@/lib/school-constants';
 import { getLatestSchoolData } from '@/lib/db';
@@ -137,10 +137,12 @@ export async function GET(req: NextRequest) {
       : searchParams.get('token');
 
     const schoolData = await getLatestSchoolData(schoolKey || undefined);
+    const sysCreds = getSystemServiceAccountCreds();
     const serverFallbackToken =
       schoolData?.serviceAccountKey ||
-      schoolData?.accessToken ||
       process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+      (sysCreds ? JSON.stringify(sysCreds) : '') ||
+      schoolData?.accessToken ||
       null;
 
     if (schoolData) {
@@ -391,17 +393,22 @@ export async function POST(req: NextRequest) {
 
     if (!spreadsheetId || !accessToken) {
       const schoolData = await getLatestSchoolData(schoolKey || undefined);
+      const sysCreds = getSystemServiceAccountCreds();
       if (schoolData) {
         if (!spreadsheetId) spreadsheetId = schoolData.spreadsheetId;
         if (!accessToken) {
           accessToken =
             schoolData.serviceAccountKey ||
-            schoolData.accessToken ||
             process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+            (sysCreds ? JSON.stringify(sysCreds) : '') ||
+            schoolData.accessToken ||
             '';
         }
-      } else if (!accessToken && process.env.GOOGLE_SERVICE_ACCOUNT_KEY) {
-        accessToken = process.env.GOOGLE_SERVICE_ACCOUNT_KEY;
+      } else if (!accessToken) {
+        accessToken =
+          process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+          (sysCreds ? JSON.stringify(sysCreds) : '') ||
+          '';
       }
     }
 

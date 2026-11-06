@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFromSheet } from '@/lib/sheets';
+import { readFromSheet, getSystemServiceAccountCreds } from '@/lib/sheets';
 import { deduplicateClasses } from '@/lib/pdf-parser';
 
 // Türkçe ve özel karakterleri latin küçük harflere çevirici
@@ -101,14 +101,23 @@ export async function POST(req: NextRequest) {
     let targetSpreadsheetId = spreadsheetId;
     let targetToken = accessToken;
     let foundSchoolName = '';
-    let serverFallbackToken = process.env.GOOGLE_SERVICE_ACCOUNT_KEY || '';
+    const sysCreds = getSystemServiceAccountCreds();
+    let serverFallbackToken =
+      process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+      (sysCreds ? JSON.stringify(sysCreds) : '') ||
+      '';
 
     // 1. Okulun E-Tablo bağlantı bilgilerini bul
     try {
       const latest = await getLatestSchoolData(cleanSchoolKey || undefined);
       if (latest) {
         if (latest.spreadsheetId) targetSpreadsheetId = latest.spreadsheetId;
-        serverFallbackToken = latest.serviceAccountKey || latest.accessToken || serverFallbackToken;
+        serverFallbackToken =
+          latest.serviceAccountKey ||
+          process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+          (sysCreds ? JSON.stringify(sysCreds) : '') ||
+          latest.accessToken ||
+          serverFallbackToken;
         if (!targetToken) targetToken = serverFallbackToken;
         foundSchoolName = latest.schoolName || '';
       }

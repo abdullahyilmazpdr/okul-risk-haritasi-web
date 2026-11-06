@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFromSheet, updateSheetRange, clearSheetRange, ensureSheetExists } from '@/lib/sheets';
+import { readFromSheet, updateSheetRange, clearSheetRange, ensureSheetExists, getSystemServiceAccountCreds } from '@/lib/sheets';
 import { getLatestSchoolData } from '@/lib/db';
 import { logAuditEvent } from '@/lib/audit-logger';
 
@@ -38,10 +38,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const sysCreds = getSystemServiceAccountCreds();
     const serverFallbackToken =
       latestSchool?.serviceAccountKey ||
-      latestSchool?.accessToken ||
       process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+      (sysCreds ? JSON.stringify(sysCreds) : '') ||
+      latestSchool?.accessToken ||
       '';
 
     if (!spreadsheetId && latestSchool?.spreadsheetId) {

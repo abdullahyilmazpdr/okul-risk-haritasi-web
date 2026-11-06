@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { readFromSheet } from '@/lib/sheets';
+import { readFromSheet, getSystemServiceAccountCreds } from '@/lib/sheets';
 import { getLatestSchoolData } from '@/lib/db';
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit';
 import { buildWhatsAppLink, generateUsername, generatePassword, deduplicateClasses } from '@/lib/pdf-parser';
@@ -74,10 +74,12 @@ export async function GET(req: NextRequest) {
       });
     }
 
+    const sysCreds = getSystemServiceAccountCreds();
     const serverFallbackToken =
       latestSchool?.serviceAccountKey ||
-      latestSchool?.accessToken ||
       process.env.GOOGLE_SERVICE_ACCOUNT_KEY ||
+      (sysCreds ? JSON.stringify(sysCreds) : '') ||
+      latestSchool?.accessToken ||
       '';
 
     // 2. Aşama: Eğer token veya spreadsheetId yoksa Firestore'daki okuldan sadece bağlantı bilgilerini çek
