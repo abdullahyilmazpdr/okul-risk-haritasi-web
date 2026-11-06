@@ -25,6 +25,7 @@ import {
 import toast from 'react-hot-toast';
 import { MEB_OFFICIAL_RISK_ITEMS } from '@/lib/meb-risk-items';
 import { getCurrentAcademicYear } from '@/lib/academic-year';
+import { auth } from '@/lib/firebase';
 
 interface RiskCategoryConfig {
   id: string;
@@ -228,14 +229,25 @@ export default function AdminRiskMapPage() {
     try {
       const storedSpreadsheetId = typeof window !== 'undefined' ? localStorage.getItem('active_spreadsheet_id') : null;
       const storedToken = typeof window !== 'undefined' ? localStorage.getItem('google_access_token') : null;
+      const storedSessionToken = typeof window !== 'undefined' ? localStorage.getItem('teacher_session_token') : null;
       const activeSchoolKey = typeof window !== 'undefined' ? localStorage.getItem('admin_active_school_key') : null;
+      let ssoAdminUid = '';
+      try {
+        const ssoRaw = typeof window !== 'undefined' ? localStorage.getItem('sso_admin_session') : null;
+        if (ssoRaw) ssoAdminUid = JSON.parse(ssoRaw)?.uid || '';
+      } catch (e) {}
+      const currentAdminUid = auth.currentUser?.uid || ssoAdminUid;
 
       const url = new URL('/api/school-risk-matrix', window.location.origin);
       if (storedSpreadsheetId) url.searchParams.set('spreadsheetId', storedSpreadsheetId);
       if (activeSchoolKey) url.searchParams.set('schoolKey', activeSchoolKey);
+      if (currentAdminUid) url.searchParams.set('adminUid', currentAdminUid);
 
       const res = await fetch(url.toString(), {
-        headers: storedToken ? { 'Authorization': `Bearer ${storedToken}` } : {}
+        headers: {
+          ...(storedToken ? { 'Authorization': `Bearer ${storedToken}` } : {}),
+          ...(storedSessionToken ? { 'x-session-token': storedSessionToken } : {})
+        }
       });
       const data = await res.json();
 
@@ -475,13 +487,19 @@ export default function AdminRiskMapPage() {
     setIsSyncing(true);
     const syncToast = toast.loading('Konsolide matris E-Tabloya (OkulRiskHaritasi sayfasına) yazılıyor...');
     try {
+      const storedSessionToken = typeof window !== 'undefined' ? localStorage.getItem('teacher_session_token') : null;
       const res = await fetch('/api/school-risk-matrix', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(storedSessionToken ? { 'x-session-token': storedSessionToken } : {})
+        },
         body: JSON.stringify({
           spreadsheetId: storedSpreadsheetId,
           accessToken: storedToken,
           schoolKey: activeSchoolKey,
+          adminUid: auth.currentUser?.uid || '',
+          sessionToken: storedSessionToken,
           classSummaries: classRows
         })
       });

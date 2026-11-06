@@ -3,7 +3,7 @@ import { readFromSheet, writeSheetRange, clearSheetRange, ensureSheetExists, mar
 import { getLatestSchoolData } from '@/lib/db';
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit';
 import { logAuditEvent } from '@/lib/audit-logger';
-import { verifyTeacherToken } from '@/lib/session-token';
+import { verifyTeacherToken, isAuthorizedSchoolRequest } from '@/lib/session-token';
 
 const RISK_SHEET_HEADERS = [
   'Öğrenci No',
@@ -128,15 +128,33 @@ function extractRecordFromRow(r: any[]) {
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    let spreadsheetId = searchParams.get('spreadsheetId');
+    const clientSpreadsheetId = searchParams.get('spreadsheetId');
+    let spreadsheetId = clientSpreadsheetId;
     const studentNumber = searchParams.get('studentNumber');
     const schoolKey = searchParams.get('schoolKey');
+    const adminUid = searchParams.get('adminUid') || req.headers.get('x-admin-uid');
+    const sessionTokenParam = searchParams.get('sessionToken') || req.headers.get('x-session-token');
     const authHeader = req.headers.get('Authorization');
-    let token = authHeader?.startsWith('Bearer ') 
-      ? authHeader.split('Bearer ')[1] 
-      : searchParams.get('token');
+    const headerToken = authHeader?.startsWith('Bearer ') 
+      ? authHeader.split('Bearer ')[1].trim() 
+      : (searchParams.get('token') || '');
+    let token: string | null = headerToken.startsWith('ya29.') ? headerToken : null;
 
     const schoolData = await getLatestSchoolData(schoolKey || undefined).catch(() => null);
+
+    // Güvenlik Kontrolü (KVKK): Dışarıdan sadece schoolKey yazılarak öğrenci ŞÖK görüşleri ve risk kayıtları okunamaz.
+    const authCheck = isAuthorizedSchoolRequest({
+      sessionToken: sessionTokenParam,
+      headerToken,
+      adminUid,
+      clientSpreadsheetId,
+      targetSchoolKey: schoolKey,
+      schoolData
+    });
+    if (!authCheck.authorized) {
+      return NextResponse.json({ error: authCheck.error || 'Yetkisiz erişim.' }, { status: 401 });
+    }
+
     const sysSa = getSystemServiceAccountCreds();
     const serverFallbackToken =
       schoolData?.serviceAccountKey ||
@@ -254,7 +272,22 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Öğrenci numarası zorunludur.' }, { status: 400 });
     }
 
+    const clientSpreadsheetId = spreadsheetId;
     const schoolData = await getLatestSchoolData(schoolKey || undefined).catch(() => null);
+
+    // Güvenlik Kontrolü: Kayıt yazma işleminde geçerli sessionToken, adminUid, OAuth token veya okulun gizli spreadsheetId doğrulaması zorunludur
+    const postAuthCheck = isAuthorizedSchoolRequest({
+      sessionToken: sessionToken || req.headers.get('x-session-token'),
+      headerToken: accessToken || req.headers.get('Authorization')?.split('Bearer ')[1]?.trim(),
+      adminUid: body.adminUid || req.headers.get('x-admin-uid'),
+      clientSpreadsheetId,
+      targetSchoolKey: schoolKey,
+      schoolData
+    });
+    if (!postAuthCheck.authorized) {
+      return NextResponse.json({ error: postAuthCheck.error || 'Yetkisiz kayıt denemesi engellendi.' }, { status: 401 });
+    }
+
     const sysSa = getSystemServiceAccountCreds();
     const serverFallbackToken =
       schoolData?.serviceAccountKey ||

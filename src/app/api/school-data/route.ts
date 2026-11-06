@@ -3,6 +3,7 @@ import { readFromSheet, getSystemServiceAccountCreds } from '@/lib/sheets';
 import { getLatestSchoolData } from '@/lib/db';
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit';
 import { buildWhatsAppLink, generateUsername, generatePassword, deduplicateClasses } from '@/lib/pdf-parser';
+import { isAuthorizedSchoolRequest } from '@/lib/session-token';
 
 export async function GET(req: NextRequest) {
   try {
@@ -13,11 +14,14 @@ export async function GET(req: NextRequest) {
     }
     const authHeader = req.headers.get('Authorization');
     const headerToken = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split('Bearer ')[1].trim() : '';
-    let token = headerToken;
+    const sessionTokenHeader = req.headers.get('x-session-token') || '';
+    let token = headerToken.startsWith('ya29.') ? headerToken : '';
     const { searchParams } = new URL(req.url);
-    let spreadsheetId = searchParams.get('spreadsheetId');
+    const clientSpreadsheetId = searchParams.get('spreadsheetId');
+    let spreadsheetId = clientSpreadsheetId;
     const schoolKey = searchParams.get('schoolKey');
-    const adminUid = searchParams.get('adminUid');
+    const adminUid = searchParams.get('adminUid') || req.headers.get('x-admin-uid');
+    const sessionTokenParam = searchParams.get('sessionToken') || sessionTokenHeader;
 
     const verifyOnly = searchParams.get('verifyOnly') === 'true';
     const requestedIncludePasswords = searchParams.get('includePasswords') === 'true';
@@ -29,7 +33,7 @@ export async function GET(req: NextRequest) {
 
     // Güvenlik Kontrolü: Öğretmen şifreleri ve WhatsApp bağlantılarını yalnızca doğrulanmış okul yöneticisi görebilir
     const isAuthorizedAdmin = Boolean(
-      headerToken ||
+      headerToken.startsWith('ya29.') ||
       (adminUid && latestSchool?.adminUid && adminUid === latestSchool.adminUid)
     );
     const includePasswords = requestedIncludePasswords && isAuthorizedAdmin;
@@ -72,6 +76,20 @@ export async function GET(req: NextRequest) {
           maskedSchoolKey: maskCode(targetSchoolKey)
         }
       });
+    }
+
+    // Güvenlik Kontrolü (KVKK): verifyOnly=true dışındaki tüm veri okumalarında geçerli oturum zorunludur.
+    // Dışarıdan sadece 6 haneli schoolKey tahmin edilerek öğrenci/öğretmen listesi çekilemez.
+    const authCheck = isAuthorizedSchoolRequest({
+      sessionToken: sessionTokenParam,
+      headerToken,
+      adminUid,
+      clientSpreadsheetId,
+      targetSchoolKey: schoolKey,
+      schoolData: latestSchool
+    });
+    if (!authCheck.authorized) {
+      return NextResponse.json({ error: authCheck.error || 'Yetkisiz erişim.' }, { status: 401 });
     }
 
     const sysCreds = getSystemServiceAccountCreds();

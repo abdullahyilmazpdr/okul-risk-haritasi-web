@@ -3,6 +3,7 @@ import { readFromSheet, updateSheetRange, ensureSheetExists, getSystemServiceAcc
 import { MEB_OFFICIAL_RISK_ITEMS } from '@/lib/meb-risk-items';
 import { FALLBACK_STUDENTS, FALLBACK_CLASSES } from '@/lib/school-constants';
 import { getLatestSchoolData } from '@/lib/db';
+import { isAuthorizedSchoolRequest } from '@/lib/session-token';
 
 function cleanTr(str: string): string {
   if (!str) return '';
@@ -129,14 +130,32 @@ function getClassBaseKey(raw: string): string {
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url);
-    let spreadsheetId = searchParams.get('spreadsheetId');
+    const clientSpreadsheetId = searchParams.get('spreadsheetId');
+    let spreadsheetId = clientSpreadsheetId;
     const schoolKey = searchParams.get('schoolKey');
+    const adminUid = searchParams.get('adminUid') || req.headers.get('x-admin-uid');
+    const sessionTokenParam = searchParams.get('sessionToken') || req.headers.get('x-session-token');
     const authHeader = req.headers.get('Authorization');
-    let token = authHeader?.startsWith('Bearer ') 
-      ? authHeader.split('Bearer ')[1] 
-      : searchParams.get('token');
+    const headerToken = authHeader?.startsWith('Bearer ')
+      ? authHeader.split('Bearer ')[1].trim()
+      : (searchParams.get('token') || '');
+    let token: string | null = headerToken.startsWith('ya29.') ? headerToken : null;
 
     const schoolData = await getLatestSchoolData(schoolKey || undefined);
+
+    // Güvenlik Kontrolü (KVKK): Dışarıdan sadece schoolKey yazılarak okul risk matrisi ve öğrenci verileri çekilemez.
+    const authCheck = isAuthorizedSchoolRequest({
+      sessionToken: sessionTokenParam,
+      headerToken,
+      adminUid,
+      clientSpreadsheetId,
+      targetSchoolKey: schoolKey,
+      schoolData
+    });
+    if (!authCheck.authorized) {
+      return NextResponse.json({ error: authCheck.error || 'Yetkisiz erişim.' }, { status: 401 });
+    }
+
     const sysCreds = getSystemServiceAccountCreds();
     const serverFallbackToken =
       schoolData?.serviceAccountKey ||
@@ -389,10 +408,23 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    let { spreadsheetId, accessToken, schoolKey, classSummaries, schoolInfo } = await req.json();
+    let { spreadsheetId, accessToken, schoolKey, adminUid, sessionToken, classSummaries, schoolInfo } = await req.json();
+    const clientSpreadsheetId = spreadsheetId;
+    const schoolData = await getLatestSchoolData(schoolKey || undefined);
+
+    const authCheck = isAuthorizedSchoolRequest({
+      sessionToken: sessionToken || req.headers.get('x-session-token'),
+      headerToken: accessToken || req.headers.get('Authorization')?.split('Bearer ')[1]?.trim(),
+      adminUid: adminUid || req.headers.get('x-admin-uid'),
+      clientSpreadsheetId,
+      targetSchoolKey: schoolKey,
+      schoolData
+    });
+    if (!authCheck.authorized) {
+      return NextResponse.json({ error: authCheck.error || 'Yetkisiz işlem.' }, { status: 401 });
+    }
 
     if (!spreadsheetId || !accessToken) {
-      const schoolData = await getLatestSchoolData(schoolKey || undefined);
       const sysCreds = getSystemServiceAccountCreds();
       if (schoolData) {
         if (!spreadsheetId) spreadsheetId = schoolData.spreadsheetId;

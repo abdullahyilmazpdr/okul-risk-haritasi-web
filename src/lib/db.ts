@@ -56,20 +56,16 @@ export const saveSchoolData = async (
       schoolKey: cleanKey,
       spreadsheetId: data.spreadsheetId,
       updatedAt: new Date().toISOString(),
-      // Öğretmen ve öğrenci listeleri / şifreleri Firestore kotasını doldurmamak için ASLA Firestore'da tutulmaz, yalnızca E-Tabloda barınır:
+      // Güvenlik & Kota Koruması: Öğretmen/öğrenci listeleri ve hassas OAuth/ServiceAccount anahtarları ASLA Firestore'da açık tutulmaz:
       teachers: deleteField(),
-      students: deleteField()
+      students: deleteField(),
+      accessToken: deleteField(),
+      serviceAccountKey: deleteField()
     };
     if (data.adminEmail) cleanData.adminEmail = data.adminEmail;
-    if (data.accessToken) cleanData.accessToken = data.accessToken;
     if (data.schoolName) cleanData.schoolName = data.schoolName;
     if (data.district) cleanData.district = data.district;
     if (data.academicYear) cleanData.academicYear = data.academicYear;
-    if (data.serviceAccountKey) {
-      cleanData.serviceAccountKey = typeof data.serviceAccountKey === 'string' 
-        ? data.serviceAccountKey 
-        : JSON.stringify(data.serviceAccountKey);
-    }
     if (data.spreadsheetUrl) {
       cleanData.spreadsheetUrl = data.spreadsheetUrl;
     } else {
@@ -338,12 +334,10 @@ export const verifyAndExecuteTransfer = async (
       transferredAt: new Date().toISOString(),
       previousAdminEmailMasked: maskEmail(oldAdminEmail),
       teachers: deleteField(),
-      students: deleteField()
+      students: deleteField(),
+      accessToken: deleteField(),
+      serviceAccountKey: deleteField()
     };
-
-    if (newAccessToken) {
-      updatedSchoolData.accessToken = newAccessToken;
-    }
 
     // 1. schools_by_key güncelle
     await setDoc(schoolRef, updatedSchoolData, { merge: true });

@@ -56,7 +56,10 @@ export default function AdminDashboard() {
             setSheetCreated(true);
             setSheetUrl(`https://docs.google.com/spreadsheets/d/${ssoAdmin.spreadsheetId}`);
             localStorage.setItem('active_spreadsheet_id', ssoAdmin.spreadsheetId);
-            fetch(`/api/school-data?spreadsheetId=${ssoAdmin.spreadsheetId}&schoolKey=${encodeURIComponent(ssoAdmin.schoolKey)}`)
+            const ssoToken = localStorage.getItem('teacher_session_token') || '';
+            fetch(`/api/school-data?spreadsheetId=${ssoAdmin.spreadsheetId}&schoolKey=${encodeURIComponent(ssoAdmin.schoolKey)}&adminUid=${encodeURIComponent(ssoAdmin.uid || '')}`, {
+              headers: ssoToken ? { 'x-session-token': ssoToken } : {}
+            })
               .then(r => r.json())
               .then(json => {
                 if (json?.data?.stats) {
@@ -114,7 +117,7 @@ export default function AdminDashboard() {
             // Canlı verileri ve istatistikleri API'den çek
             const activeToken = localStorage.getItem('google_access_token') || schoolData.accessToken || '';
             const res = await fetch(
-              `/api/school-data?spreadsheetId=${schoolData.spreadsheetId}&schoolKey=${encodeURIComponent(schoolData.schoolKey || '')}`,
+              `/api/school-data?spreadsheetId=${schoolData.spreadsheetId}&schoolKey=${encodeURIComponent(schoolData.schoolKey || '')}&adminUid=${encodeURIComponent(user.uid)}`,
               {
                 headers: {
                   ...(activeToken ? { 'Authorization': `Bearer ${activeToken}` } : {})

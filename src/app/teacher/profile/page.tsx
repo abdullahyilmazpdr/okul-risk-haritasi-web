@@ -68,11 +68,14 @@ export default function TeacherProfilePage() {
         // Canlı E-Tablo verisinden öğretmenin güncel sınıflarını senkronize et
         const schoolKey = parsed?.schoolKey || localStorage.getItem('last_school_key') || '';
         const spreadsheetId = parsed?.spreadsheetId || localStorage.getItem('active_spreadsheet_id') || '';
+        const sessionToken = parsed?.sessionToken || localStorage.getItem('teacher_session_token') || '';
         const url = new URL('/api/school-data', window.location.origin);
         if (schoolKey) url.searchParams.set('schoolKey', schoolKey);
         if (spreadsheetId) url.searchParams.set('spreadsheetId', spreadsheetId);
 
-        fetch(url.toString())
+        fetch(url.toString(), {
+          headers: sessionToken ? { 'x-session-token': sessionToken } : {}
+        })
           .then(r => r.json())
           .then(json => {
             if (json?.data?.teachers && Array.isArray(json.data.teachers)) {

@@ -1,0 +1,33 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Okul anahtarı sorgulaması:
+    // - Tekil kurum kodu sorgulaması (get) açık,
+    // - Tüm okulları toplu çekme / listeleme (list) TAMAMEN KAPALI (hiçbir bot tüm okulları listeleyemez),
+    // - Yazma (write) sadece oturum açmış yöneticilere açık.
+    match /schools_by_key/{schoolKey} {
+      allow get: if true;
+      allow list: if false;
+      allow write: if request.auth != null;
+    }
+    
+    // Eski/yedek okullar koleksiyonu
+    match /schools/{schoolId} {
+      allow get: if true;
+      allow list: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    // Okul yetki devri doğrulama kodları (toplu listeleme kapalı)
+    match /school_transfers/{schoolKey} {
+      allow get, write: if true;
+      allow list: if false;
+    }
+
+    // Diğer tüm tablolar sadece giriş yapmış yöneticilere açık
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}

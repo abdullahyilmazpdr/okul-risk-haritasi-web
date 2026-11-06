@@ -175,11 +175,14 @@ function StudentDetailsContent() {
       // Canlı API'den de öğrenci bilgilerini teyit et
       const storedSpreadsheetIdForSchool = parsedTeacher?.spreadsheetId || localStorage.getItem('active_spreadsheet_id') || '';
       const schoolKeyForSchool = parsedTeacher?.schoolKey || localStorage.getItem('last_school_key') || '';
+      const sessionTokenForSchool = parsedTeacher?.sessionToken || localStorage.getItem('teacher_session_token') || '';
       const schoolFetchUrl = new URL('/api/school-data', window.location.origin);
       if (storedSpreadsheetIdForSchool) schoolFetchUrl.searchParams.set('spreadsheetId', storedSpreadsheetIdForSchool);
       if (schoolKeyForSchool) schoolFetchUrl.searchParams.set('schoolKey', schoolKeyForSchool);
 
-      fetch(schoolFetchUrl.toString())
+      fetch(schoolFetchUrl.toString(), {
+        headers: sessionTokenForSchool ? { 'x-session-token': sessionTokenForSchool } : {}
+      })
         .then(res => res.json())
         .then(data => {
           if (data?.data?.students && Array.isArray(data.data.students)) {
@@ -265,7 +268,10 @@ function StudentDetailsContent() {
       if (schoolKey) opinionFetchUrl.searchParams.set('schoolKey', schoolKey);
 
       fetch(opinionFetchUrl.toString(), {
-        headers: storedToken ? { 'Authorization': `Bearer ${storedToken}` } : {}
+        headers: {
+          ...(storedToken ? { 'Authorization': `Bearer ${storedToken}` } : {}),
+          ...(sessionTokenForSchool ? { 'x-session-token': sessionTokenForSchool } : {})
+        }
       })
         .then(res => res.json())
           .then(json => {

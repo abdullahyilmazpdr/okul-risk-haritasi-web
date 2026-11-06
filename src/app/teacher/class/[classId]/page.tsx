@@ -156,13 +156,15 @@ function ClassDetailsContent() {
       try {
         const storedSpreadsheetId = currentTeacher?.spreadsheetId || localStorage.getItem('active_spreadsheet_id') || '';
         const schoolKey = currentTeacher?.schoolKey || localStorage.getItem('last_school_key') || '';
+        const sessionToken = currentTeacher?.sessionToken || localStorage.getItem('teacher_session_token') || '';
+        const authHeaders: Record<string, string> = sessionToken ? { 'x-session-token': sessionToken } : {};
 
         // Canlı okul verisini API'den çek (sunucu tarafındaki okul / servis hesabı yetkilendirmesini kullanır)
         const schoolDataUrl = new URL('/api/school-data', window.location.origin);
         if (storedSpreadsheetId) schoolDataUrl.searchParams.set('spreadsheetId', storedSpreadsheetId);
         if (schoolKey) schoolDataUrl.searchParams.set('schoolKey', schoolKey);
 
-        const schoolRes = await fetch(schoolDataUrl.toString());
+        const schoolRes = await fetch(schoolDataUrl.toString(), { headers: authHeaders });
 
         let freshStudents = loadedStudents;
 
@@ -219,7 +221,7 @@ function ClassDetailsContent() {
         if (storedSpreadsheetId) opinionUrl.searchParams.set('spreadsheetId', storedSpreadsheetId);
         if (schoolKey) opinionUrl.searchParams.set('schoolKey', schoolKey);
 
-        const opRes = await fetch(opinionUrl.toString());
+        const opRes = await fetch(opinionUrl.toString(), { headers: authHeaders });
         const opJson = await opRes.json();
 
         const statuses: Record<string, { sokCount: number; mySokFilled: boolean; riskCount: number; groupTrainingDays: string[] }> = {};

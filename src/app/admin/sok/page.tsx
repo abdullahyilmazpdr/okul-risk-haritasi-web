@@ -161,15 +161,26 @@ export default function AdminSokPage() {
     try {
       const storedSpreadsheetId = typeof window !== 'undefined' ? localStorage.getItem('active_spreadsheet_id') : null;
       const storedToken = typeof window !== 'undefined' ? localStorage.getItem('google_access_token') : null;
+      const storedSessionToken = typeof window !== 'undefined' ? localStorage.getItem('teacher_session_token') : null;
       const activeSchoolKey = typeof window !== 'undefined' ? localStorage.getItem('admin_active_school_key') : null;
+      let ssoAdminUid = '';
+      try {
+        const ssoRaw = typeof window !== 'undefined' ? localStorage.getItem('sso_admin_session') : null;
+        if (ssoRaw) ssoAdminUid = JSON.parse(ssoRaw)?.uid || '';
+      } catch (e) {}
+      const currentAdminUid = auth.currentUser?.uid || ssoAdminUid;
 
       const url = new URL('/api/student-opinion', window.location.origin);
       url.searchParams.set('all', 'true');
       if (storedSpreadsheetId) url.searchParams.set('spreadsheetId', storedSpreadsheetId);
       if (activeSchoolKey) url.searchParams.set('schoolKey', activeSchoolKey);
+      if (currentAdminUid) url.searchParams.set('adminUid', currentAdminUid);
 
       const res = await fetch(url.toString(), {
-        headers: storedToken ? { 'Authorization': `Bearer ${storedToken}` } : {}
+        headers: {
+          ...(storedToken ? { 'Authorization': `Bearer ${storedToken}` } : {}),
+          ...(storedSessionToken ? { 'x-session-token': storedSessionToken } : {})
+        }
       });
       const data = await res.json();
 
@@ -211,7 +222,7 @@ export default function AdminSokPage() {
         const token = (typeof window !== 'undefined' ? localStorage.getItem('google_access_token') : null) || data?.accessToken;
         if (sheetId) {
           try {
-            const res = await fetch(`/api/school-data?spreadsheetId=${sheetId}&schoolKey=${data?.schoolKey || activeKey || ''}`, {
+            const res = await fetch(`/api/school-data?spreadsheetId=${sheetId}&schoolKey=${data?.schoolKey || activeKey || ''}&adminUid=${encodeURIComponent(user.uid)}`, {
               headers: token ? { 'Authorization': `Bearer ${token}` } : {}
             });
             const json = await res.json();
