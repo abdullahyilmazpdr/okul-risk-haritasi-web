@@ -375,6 +375,14 @@ export async function GET(req: NextRequest) {
       .filter(st => st.risks.length > 0)
       .sort((a, b) => b.risks.length - a.risks.length);
 
+    // Tüm öğrencileri sınıfları ve riskleriyle birlikte hazırla (Sınıf Risk Haritası MEB şablonu indirmeleri için)
+    const allStudentsWithRisks = students.map(st => ({
+      number: st.number,
+      name: st.name,
+      className: st.className,
+      risks: studentRiskMap.get(st.number) || []
+    }));
+
     const evaluatedStudentsCount = students.filter(st => enteredStudentNumbers.has(cleanTr(st.number))).length;
 
     return NextResponse.json({
@@ -382,6 +390,7 @@ export async function GET(req: NextRequest) {
       classRows,
       totals,
       riskStudents,
+      allStudentsWithRisks,
       missingStudents,
       zeroEntryClasses,
       opinions: opinionsList,

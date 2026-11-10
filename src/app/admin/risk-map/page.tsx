@@ -200,6 +200,8 @@ export default function AdminRiskMapPage() {
   const [missingClassFilter, setMissingClassFilter] = useState('ALL');
   const [missingSearchTerm, setMissingSearchTerm] = useState('');
   const [isExporting, setIsExporting] = useState(false);
+  const [isExportingAllClasses, setIsExportingAllClasses] = useState(false);
+  const [isExportingSingleClass, setIsExportingSingleClass] = useState<string | null>(null);
   const [isExportingDetailed, setIsExportingDetailed] = useState(false);
   const [isExportingMissing, setIsExportingMissing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -207,6 +209,7 @@ export default function AdminRiskMapPage() {
   const [classRows, setClassRows] = useState<any[]>([]);
   const [totals, setTotals] = useState<number[]>([]);
   const [riskStudents, setRiskStudents] = useState<Array<{ number: string; name: string; className: string; risks: number[] }>>([]);
+  const [allStudentsWithRisks, setAllStudentsWithRisks] = useState<Array<{ number: string; name: string; className: string; risks: number[] }>>([]);
   const [missingStudents, setMissingStudents] = useState<Array<{ number: string; name: string; className: string; classTeacher: string; isZeroEntryClass: boolean }>>([]);
   const [zeroEntryClasses, setZeroEntryClasses] = useState<Array<{ orderNo: number; className: string; studentCount: number; classTeacher: string }>>([]);
   const [stats, setStats] = useState({
@@ -256,6 +259,9 @@ export default function AdminRiskMapPage() {
         setTotals(data.totals || []);
         if (Array.isArray(data.riskStudents)) {
           setRiskStudents(data.riskStudents);
+        }
+        if (Array.isArray(data.allStudentsWithRisks)) {
+          setAllStudentsWithRisks(data.allStudentsWithRisks);
         }
         if (Array.isArray(data.missingStudents)) {
           setMissingStudents(data.missingStudents);
@@ -518,44 +524,124 @@ export default function AdminRiskMapPage() {
     }
   };
 
+  // 1. Resmi MEB Okul Risk Haritası İndir (15173010_okulriskharitasi.xlsx - S.İ.2.a)
   const handleExportExcel = async () => {
     setIsExporting(true);
-    const toastId = toast.loading('Bakanlık formatında Excel hazırlanıyor...');
+    const toastId = toast.loading('Resmi MEB formatında Okul Risk Haritası Excel dosyası hazırlanıyor...');
     try {
+      const { buildOfficialSchoolRiskMapWorkbook } = await import('@/lib/meb-excel-export');
       const XLSX = await import('xlsx');
       const academicYear = getCurrentAcademicYear();
       
-      // Excel Sayfası Oluştur
-      const wsData: any[][] = [
-        [`${academicYear} EĞİTİM ÖĞRETİM YILI OKUL RİSK HARİTASI`],
-        ["OKUL ADI:", schoolInfo.schoolName || "Okul Yönetimi"],
-        ["İLÇESİ:", schoolInfo.district || "-"],
-        ["TOPLAM ÖĞRENCİ SAYISI:", String(stats.totalStudents || 0)],
-        ["TOPLAM ÖĞRETMEN SAYISI:", String(stats.totalTeachers || 0)],
-        [],
-        ["Sıra No", "Sınıf/Şube", ...MEB_OFFICIAL_RISK_ITEMS],
-      ];
-
-      // Sınıf satırları
-      classRows.forEach((row, idx) => {
-        wsData.push([idx + 1, row.className, ...row.risks]);
+      const wb = buildOfficialSchoolRiskMapWorkbook({
+        schoolName: schoolInfo.schoolName || "Okul Adı",
+        district: schoolInfo.district || "-",
+        academicYear,
+        totalStudents: stats.totalStudents || 0,
+        totalTeachers: stats.totalTeachers || 0,
+        classRows,
+        totals
       });
-
-      // Toplam satırı
-      wsData.push(["TOPLAM", "Okul Geneli", ...totals]);
-
-      const ws = XLSX.utils.aoa_to_sheet(wsData);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "OKUL RİSK HARİTASI");
       
       XLSX.writeFile(wb, `${academicYear}_Okul_Risk_Haritasi.xlsx`);
       toast.dismiss(toastId);
-      toast.success("Resmi MEB formatında Excel dosyası başarıyla indirildi!");
+      toast.success("Bakanlık resmi şablonuyla birebir aynı Okul Risk Haritası (S.İ.2.a) başarıyla indirildi!");
     } catch (err: any) {
       toast.dismiss(toastId);
       toast.error("Excel oluşturulurken hata: " + err.message);
     } finally {
       setIsExporting(false);
+    }
+  };
+
+  // 2. Tek Bir Sınıf İçin Resmi Sınıf Risk Haritası İndir (S.İ.4.a)
+  const handleExportSingleClassExcel = async (targetClassName: string) => {
+    if (!targetClassName) return;
+    setIsExportingSingleClass(targetClassName);
+    const toastId = toast.loading(`${targetClassName} sınıfı için MEB Sınıf Risk Haritası şablonu hazırlanıyor...`);
+    try {
+      const { buildOfficialSingleClassRiskMapWorkbook } = await import('@/lib/meb-excel-export');
+      const XLSX = await import('xlsx');
+      const academicYear = getCurrentAcademicYear();
+
+      const cleanKey = (name: string) => (name || '').toLowerCase().replace(/[^a-z0-9çğıöşü]/g, '');
+      const targetKey = cleanKey(targetClassName);
+
+      const classStudents = allStudentsWithRisks.filter(s => {
+        const sKey = cleanKey(s.className || '');
+        return sKey === targetKey || s.className === targetClassName;
+      });
+
+      const matchedClassRow = classRows.find(r => {
+        const rKey = cleanKey(r.className || '');
+        return rKey === targetKey || r.className === targetClassName;
+      });
+
+      const wb = buildOfficialSingleClassRiskMapWorkbook({
+        schoolName: schoolInfo.schoolName || "Okul Adı",
+        district: schoolInfo.district || "-",
+        academicYear,
+        className: targetClassName,
+        classTeacher: matchedClassRow?.classTeacher || 'Sınıf Rehber Öğretmeni',
+        students: classStudents
+      });
+
+      const cleanFileName = targetClassName.replace(/[\\/*?:[\]]/g, '_');
+      XLSX.writeFile(wb, `${academicYear}_${cleanFileName}_Sinif_Risk_Haritasi.xlsx`);
+      toast.dismiss(toastId);
+      toast.success(`${targetClassName} Sınıf Risk Haritası (S.İ.4.a Şablonu) başarıyla indirildi!`);
+    } catch (err: any) {
+      toast.dismiss(toastId);
+      toast.error("Sınıf Excel oluşturulurken hata: " + err.message);
+    } finally {
+      setIsExportingSingleClass(null);
+    }
+  };
+
+  // 3. Tüm Sınıfların Sınıf Risk Haritalarını Tek Çalışma Kitabında İndir (Yönetici)
+  const handleExportAllClassesExcel = async () => {
+    if (classRows.length === 0) {
+      toast.error('Henüz kayıtlı sınıf bulunamadı.');
+      return;
+    }
+    setIsExportingAllClasses(true);
+    const toastId = toast.loading(`Tüm sınıflar (${classRows.length} şube) için Sınıf Risk Haritaları çalışma kitabı oluşturuluyor...`);
+    try {
+      const { buildOfficialAllClassesRiskMapWorkbook } = await import('@/lib/meb-excel-export');
+      const XLSX = await import('xlsx');
+      const academicYear = getCurrentAcademicYear();
+
+      const cleanKey = (name: string) => (name || '').toLowerCase().replace(/[^a-z0-9çğıöşü]/g, '');
+
+      const classesData = classRows.map(cr => {
+        const targetKey = cleanKey(cr.className || '');
+        const classStudents = allStudentsWithRisks.filter(s => {
+          const sKey = cleanKey(s.className || '');
+          return sKey === targetKey || s.className === cr.className;
+        });
+
+        return {
+          className: cr.className,
+          classTeacher: cr.classTeacher || 'Sınıf Rehber Öğretmeni',
+          students: classStudents
+        };
+      });
+
+      const wb = buildOfficialAllClassesRiskMapWorkbook({
+        schoolName: schoolInfo.schoolName || "Okul Adı",
+        district: schoolInfo.district || "-",
+        academicYear,
+        classes: classesData
+      });
+
+      XLSX.writeFile(wb, `${academicYear}_Tum_Siniflar_Sinif_Risk_Haritalari.xlsx`);
+      toast.dismiss(toastId);
+      toast.success("Tüm sınıfların Sınıf Risk Haritaları tek Excel dosyasında sekmeler halinde başarıyla indirildi!");
+    } catch (err: any) {
+      toast.dismiss(toastId);
+      toast.error("Toplu sınıf Excel dosyası oluşturulurken hata: " + err.message);
+    } finally {
+      setIsExportingAllClasses(false);
     }
   };
 
@@ -672,9 +758,20 @@ export default function AdminRiskMapPage() {
             onClick={handleExportExcel}
             disabled={isExporting}
             className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold px-4 py-2.5 rounded-xl text-xs sm:text-sm flex items-center gap-2 transition-colors shadow-sm"
+            title="MEB 15173010_okulriskharitasi.xlsx şablonunun birebir aynısı Okul Risk Haritası"
           >
             <Download className="w-4 h-4" />
-            {isExporting ? 'Hazırlanıyor...' : 'Bakanlık Excel İndir'}
+            {isExporting ? 'Hazırlanıyor...' : 'Okul Risk Haritası İndir (MEB)'}
+          </button>
+
+          <button
+            onClick={handleExportAllClassesExcel}
+            disabled={isExportingAllClasses || classRows.length === 0}
+            className="bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white font-semibold px-4 py-2.5 rounded-xl text-xs sm:text-sm flex items-center gap-2 transition-colors shadow-sm"
+            title="Tüm sınıfların S.İ.4.a Sınıf Risk Haritalarını sekmeler halinde tek bir Excel çalışma kitabında indirir"
+          >
+            <Download className="w-4 h-4" />
+            {isExportingAllClasses ? 'Hazırlanıyor...' : 'Tüm Sınıfların Risk Haritalarını İndir (Excel)'}
           </button>
         </div>
       </div>
@@ -1764,8 +1861,21 @@ export default function AdminRiskMapPage() {
                         {row.orderNo}
                       </td>
                       <td className="px-4 py-3 border border-slate-200 font-semibold sticky left-[50px] bg-white">
-                        <div>{row.className}</div>
-                        <div className="text-[10px] text-slate-400 font-normal">Rehber: {row.classTeacher} ({row.studentCount} Öğrenci)</div>
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <div>{row.className}</div>
+                            <div className="text-[10px] text-slate-400 font-normal">Rehber: {row.classTeacher} ({row.studentCount} Öğrenci)</div>
+                          </div>
+                          <button
+                            onClick={() => handleExportSingleClassExcel(row.className)}
+                            disabled={isExportingSingleClass === row.className}
+                            title={`${row.className} MEB Sınıf Risk Haritası Excel Çıktısını İndir (S.İ.4.a)`}
+                            className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 disabled:opacity-50 text-emerald-700 border border-emerald-200 rounded-lg text-[11px] font-bold flex items-center gap-1 transition-colors shrink-0 shadow-xs"
+                          >
+                            <Download className="w-3 h-3" />
+                            <span>{isExportingSingleClass === row.className ? '...' : 'Sınıf Excel'}</span>
+                          </button>
+                        </div>
                       </td>
                       {row.risks.map((val: number, cIdx: number) => (
                         <td 

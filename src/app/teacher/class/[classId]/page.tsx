@@ -3,7 +3,8 @@
 import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, User, MessageSquarePlus, ShieldCheck, CheckCircle2, Clock } from 'lucide-react';
+import { ArrowLeft, User, MessageSquarePlus, ShieldCheck, CheckCircle2, Clock, Download } from 'lucide-react';
+import toast from 'react-hot-toast';
 import { FALLBACK_STUDENTS, FALLBACK_CLASSES } from '@/lib/school-constants';
 
 function getClassBaseKeyClient(clsName: string): string {
@@ -44,8 +45,9 @@ function ClassDetailsContent() {
   const [teacher, setTeacher] = useState<any>(null);
   const [students, setStudents] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isExportingExcel, setIsExportingExcel] = useState(false);
   const [currentClassName, setCurrentClassName] = useState<string>('');
-  const [studentStatuses, setStudentStatuses] = useState<Record<string, { sokCount: number; mySokFilled: boolean; riskCount: number; groupTrainingDays?: string[] }>>({});
+  const [studentStatuses, setStudentStatuses] = useState<Record<string, { sokCount: number; mySokFilled: boolean; riskCount: number; risks?: number[]; groupTrainingDays?: string[] }>>({});
 
   useEffect(() => {
     let currentTeacher: any = null;
@@ -224,7 +226,7 @@ function ClassDetailsContent() {
         const opRes = await fetch(opinionUrl.toString(), { headers: authHeaders });
         const opJson = await opRes.json();
 
-        const statuses: Record<string, { sokCount: number; mySokFilled: boolean; riskCount: number; groupTrainingDays: string[] }> = {};
+        const statuses: Record<string, { sokCount: number; mySokFilled: boolean; riskCount: number; risks?: number[]; groupTrainingDays: string[] }> = {};
         const tUser = (currentTeacher?.username || '').toLowerCase().trim();
         const tName = (currentTeacher?.name || '').toLowerCase().trim();
 
@@ -234,13 +236,17 @@ function ClassDetailsContent() {
           let opCount = 0;
           let myFilled = false;
           let gDays: string[] = [];
+          let currentRisks: number[] = [];
 
           // LocalStorage kontrolü
           const evalRaw = localStorage.getItem(`student_eval_${sNum}`);
           if (evalRaw) {
             try {
               const parsed = JSON.parse(evalRaw);
-              if (Array.isArray(parsed.risks)) rCount = parsed.risks.length;
+              if (Array.isArray(parsed.risks)) {
+                currentRisks = parsed.risks.map(Number).filter((n: number) => !isNaN(n));
+                rCount = currentRisks.length;
+              }
               if (Array.isArray(parsed.groupTrainingDays)) {
                 gDays = parsed.groupTrainingDays;
                 if (gDays.length > 0) myFilled = true;
@@ -270,7 +276,9 @@ function ClassDetailsContent() {
                 opCount++;
               }
               if (Array.isArray(op.risks) && op.risks.length > 0) {
-                rCount = Math.max(rCount, op.risks.length);
+                const parsedR = op.risks.map(Number).filter((n: number) => !isNaN(n));
+                currentRisks = Array.from(new Set([...currentRisks, ...parsedR]));
+                rCount = currentRisks.length;
               }
               if (Array.isArray(op.groupTrainingDays) && op.groupTrainingDays.length > 0) {
                 gDays = op.groupTrainingDays;
@@ -278,7 +286,7 @@ function ClassDetailsContent() {
             }
           }
 
-          statuses[sNum] = { sokCount: opCount, mySokFilled: myFilled, riskCount: rCount, groupTrainingDays: gDays };
+          statuses[sNum] = { sokCount: opCount, mySokFilled: myFilled, riskCount: rCount, risks: currentRisks, groupTrainingDays: gDays };
         }
 
         setStudentStatuses(statuses);
@@ -291,6 +299,52 @@ function ClassDetailsContent() {
 
     loadDataAndStatuses();
   }, [classId]);
+
+  const handleExportClassExcel = async () => {
+    if (students.length === 0) {
+      toast.error('Bu sınıfta kayıtlı öğrenci bulunamadı.');
+      return;
+    }
+    setIsExportingExcel(true);
+    const toastId = toast.loading(`${currentClassName || 'Sınıf'} için resmi MEB Sınıf Risk Haritası Excel dosyası hazırlanıyor...`);
+    try {
+      const { buildOfficialSingleClassRiskMapWorkbook } = await import('@/lib/meb-excel-export');
+      const XLSX = await import('xlsx');
+      const { getCurrentAcademicYear } = await import('@/lib/academic-year');
+      const academicYear = getCurrentAcademicYear();
+
+      const studentsData = students.map((st, idx) => {
+        const sNum = String(st.number || st.id || idx + 1).trim();
+        const stStatus = studentStatuses[sNum] || studentStatuses[st.number] || { risks: [] };
+        return {
+          number: sNum,
+          name: String(st.name || '').trim(),
+          className: currentClassName,
+          risks: Array.isArray(stStatus.risks) ? stStatus.risks : []
+        };
+      });
+
+      const schoolName = teacher?.schoolName || localStorage.getItem('last_school_name') || 'Okul Adı';
+
+      const wb = buildOfficialSingleClassRiskMapWorkbook({
+        schoolName,
+        academicYear,
+        className: currentClassName || 'Sınıf/Şube',
+        classTeacher: teacher?.name || 'Sınıf Rehber Öğretmeni',
+        students: studentsData
+      });
+
+      const cleanFileName = (currentClassName || 'Sinif').replace(/[\\/*?:[\]]/g, '_');
+      XLSX.writeFile(wb, `${academicYear}_${cleanFileName}_Sinif_Risk_Haritasi.xlsx`);
+      toast.dismiss(toastId);
+      toast.success(`${currentClassName} Sınıf Risk Haritası (MEB S.İ.4.a Şablonu) başarıyla indirildi!`);
+    } catch (err: any) {
+      toast.dismiss(toastId);
+      toast.error('Excel oluşturulurken hata: ' + err.message);
+    } finally {
+      setIsExportingExcel(false);
+    }
+  };
 
   const isAdmin = Boolean(teacher?.isAdmin || teacher?.role?.toLowerCase().includes('müdür') || teacher?.role?.toLowerCase().includes('idare'));
   const isClassTeacher = Boolean(
@@ -336,12 +390,24 @@ function ClassDetailsContent() {
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-xl px-4 py-2 flex items-center gap-4 text-xs font-semibold text-slate-600 shadow-sm self-start sm:self-auto">
-          <span>Toplam: <strong>{students.length} Öğrenci</strong></span>
-          <span className="text-slate-300">|</span>
-          <span className="text-emerald-600">Erkek: <strong>{maleCount}</strong></span>
-          <span className="text-slate-300">|</span>
-          <span className="text-purple-600">Kız: <strong>{femaleCount}</strong></span>
+        <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
+          <button
+            onClick={handleExportClassExcel}
+            disabled={isExportingExcel || students.length === 0}
+            className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-semibold px-4 py-2.5 rounded-xl text-xs sm:text-sm flex items-center gap-2 transition-colors shadow-sm"
+            title="MEB S.İ.4.a Sınıf Risk Haritası resmi şablonuyla dolu Excel çıktısı"
+          >
+            <Download className="w-4 h-4" />
+            {isExportingExcel ? 'Hazırlanıyor...' : 'Sınıf Risk Haritası İndir (Excel)'}
+          </button>
+
+          <div className="bg-white border border-slate-200 rounded-xl px-4 py-2 flex items-center gap-4 text-xs font-semibold text-slate-600 shadow-sm">
+            <span>Toplam: <strong>{students.length} Öğrenci</strong></span>
+            <span className="text-slate-300">|</span>
+            <span className="text-emerald-600">Erkek: <strong>{maleCount}</strong></span>
+            <span className="text-slate-300">|</span>
+            <span className="text-purple-600">Kız: <strong>{femaleCount}</strong></span>
+          </div>
         </div>
       </div>
 
