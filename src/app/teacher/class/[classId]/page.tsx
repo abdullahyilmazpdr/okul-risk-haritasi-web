@@ -3,7 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import { ArrowLeft, User, MessageSquarePlus, ShieldCheck, CheckCircle2, Clock, Download } from 'lucide-react';
+import { ArrowLeft, User, MessageSquarePlus, ShieldCheck, CheckCircle2, Clock, Download, UserPlus, X } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { FALLBACK_STUDENTS, FALLBACK_CLASSES } from '@/lib/school-constants';
 
@@ -48,6 +48,18 @@ function ClassDetailsContent() {
   const [isExportingExcel, setIsExportingExcel] = useState(false);
   const [currentClassName, setCurrentClassName] = useState<string>('');
   const [studentStatuses, setStudentStatuses] = useState<Record<string, { sokCount: number; mySokFilled: boolean; riskCount: number; risks?: number[]; groupTrainingDays?: string[] }>>({});
+  const [schoolMeta, setSchoolMeta] = useState<{ schoolName: string; district: string; classTeacher: string }>({
+    schoolName: '',
+    district: '',
+    classTeacher: ''
+  });
+
+  // Öğretmen tarafından sınıfa yeni öğrenci ekleme modalı state'leri
+  const [showAddStudentModal, setShowAddStudentModal] = useState(false);
+  const [newStudentNumber, setNewStudentNumber] = useState('');
+  const [newStudentName, setNewStudentName] = useState('');
+  const [newStudentGender, setNewStudentGender] = useState<'Kız' | 'Erkek'>('Kız');
+  const [isAddingStudent, setIsAddingStudent] = useState(false);
 
   useEffect(() => {
     let currentTeacher: any = null;
@@ -173,6 +185,12 @@ function ClassDetailsContent() {
         if (schoolRes.ok) {
           const schoolJson = await schoolRes.json();
 
+          const liveSchoolName = schoolJson?.data?.schoolName || currentTeacher?.schoolName || localStorage.getItem('last_school_name') || '';
+          const liveDistrict = schoolJson?.data?.district || '';
+          if (liveSchoolName) {
+            localStorage.setItem('last_school_name', liveSchoolName);
+          }
+
           // Öğretmenin güncel sınıflarını canlı veriden güncelle
           if (schoolJson?.data?.teachers && Array.isArray(schoolJson.data.teachers) && currentTeacher) {
             const uNorm = (currentTeacher.username || '').toLowerCase().trim();
@@ -184,14 +202,18 @@ function ClassDetailsContent() {
             if (liveT && Array.isArray(liveT.classes) && liveT.classes.length > 0) {
               const updated = deduplicateClassesClient(liveT.classes);
               currentTeacher.classes = updated;
+              if (liveSchoolName) currentTeacher.schoolName = liveSchoolName;
               localStorage.setItem('teacher_session', JSON.stringify(currentTeacher));
               setTeacher({ ...currentTeacher });
             }
           }
 
-          if (schoolJson?.data?.students && Array.isArray(schoolJson.data.students) && schoolJson.data.students.length > 0) {
-            localStorage.setItem('school_students', JSON.stringify(schoolJson.data.students));
-            
+          let activeResolvedName = resolvedClass;
+          if (schoolJson?.data?.students && Array.isArray(schoolJson.data.students)) {
+            if (schoolJson.data.students.length > 0) {
+              localStorage.setItem('school_students', JSON.stringify(schoolJson.data.students));
+            }
+
             const freshDistinct = deduplicateClassesClient(schoolJson.data.students.map((s: any) => s.className).filter(Boolean));
             const freshMatch = freshDistinct.find((c: string) => getClassBaseKeyClient(c) === targetBaseKey);
             if (freshMatch) {
@@ -207,14 +229,42 @@ function ClassDetailsContent() {
             });
 
             if (filtered.length > 0 && filtered[0]?.className && filtered[0].className.length > resolvedClass.length) {
-              setCurrentClassName(filtered[0].className);
+              activeResolvedName = filtered[0].className;
+              setCurrentClassName(activeResolvedName);
             } else {
+              activeResolvedName = resolvedClass;
               setCurrentClassName(resolvedClass);
             }
 
             freshStudents = filtered;
             setStudents(freshStudents);
           }
+
+          // Bu sınıfın tüm sınıf rehber / özel eğitim öğretmenlerini bul (varsa 2 öğretmen dahil)
+          const activeBaseKey = getClassBaseKeyClient(activeResolvedName || resolvedClass);
+          const classTeachersList: string[] = Array.isArray(schoolJson?.data?.teachers)
+            ? Array.from(new Set(
+                schoolJson.data.teachers
+                  .filter((t: any) => {
+                    const rLower = (t.roleOrBranch || t.role || '').toLowerCase();
+                    const isClassRole =
+                      rLower.includes('sınıf') ||
+                      rLower.includes('sinif') ||
+                      rLower.includes('rehber') ||
+                      rLower.includes('özel eğitim') ||
+                      rLower.includes('ozel egitim');
+                    return isClassRole && Array.isArray(t.classes) && t.classes.some((c: string) => getClassBaseKeyClient(c) === activeBaseKey);
+                  })
+                  .map((t: any) => String(t.name || '').trim())
+                  .filter(Boolean)
+              )) as string[]
+            : [];
+
+          setSchoolMeta({
+            schoolName: liveSchoolName,
+            district: liveDistrict,
+            classTeacher: classTeachersList.join(' / ') || currentTeacher?.name || ''
+          });
         }
 
         // ŞÖK görüşlerini çekerek her öğrenci için durumları güncelle
@@ -226,9 +276,25 @@ function ClassDetailsContent() {
         const opRes = await fetch(opinionUrl.toString(), { headers: authHeaders });
         const opJson = await opRes.json();
 
+        const parseTrTsClient = (d: string) => {
+          if (!d) return 0;
+          const m = String(d).trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+(\d{1,2}):(\d{1,2}))?/);
+          if (m) {
+            const t = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), Number(m[4] || 0), Number(m[5] || 0)).getTime();
+            if (!isNaN(t)) return t;
+          }
+          const f = Date.parse(String(d));
+          return isNaN(f) ? 0 : f;
+        };
+        const isAuthOpBranch = (branch: string) => {
+          const b = (branch || '').toLowerCase();
+          return b.includes('sınıf') || b.includes('sinif') || b.includes('rehber') || b.includes('özel eğitim') || b.includes('ozel egitim') || b.includes('müdür') || b.includes('mudur') || b.includes('idare') || b.includes('yönetici');
+        };
+
         const statuses: Record<string, { sokCount: number; mySokFilled: boolean; riskCount: number; risks?: number[]; groupTrainingDays: string[] }> = {};
         const tUser = (currentTeacher?.username || '').toLowerCase().trim();
         const tName = (currentTeacher?.name || '').toLowerCase().trim();
+        const serverOpinionsAvailable = Boolean(opJson?.success && Array.isArray(opJson.opinions));
 
         for (const st of freshStudents) {
           const sNum = String(st.number || st.id || '').trim();
@@ -238,36 +304,14 @@ function ClassDetailsContent() {
           let gDays: string[] = [];
           let currentRisks: number[] = [];
 
-          // LocalStorage kontrolü
-          const evalRaw = localStorage.getItem(`student_eval_${sNum}`);
-          if (evalRaw) {
-            try {
-              const parsed = JSON.parse(evalRaw);
-              if (Array.isArray(parsed.risks)) {
-                currentRisks = parsed.risks.map(Number).filter((n: number) => !isNaN(n));
-                rCount = currentRisks.length;
-              }
-              if (Array.isArray(parsed.groupTrainingDays)) {
-                gDays = parsed.groupTrainingDays;
-                if (gDays.length > 0) myFilled = true;
-              }
-              if (parsed.opinions && typeof parsed.opinions === 'object') {
-                for (const [uKey, opObj] of Object.entries<any>(parsed.opinions)) {
-                  if (uKey.toLowerCase().trim() === tUser) {
-                    myFilled = true;
-                  }
-                  if (opObj?.opinion && opObj.opinion.trim()) {
-                    opCount++;
-                  }
-                }
-              }
-            } catch (e) {}
-          }
+          if (serverOpinionsAvailable) {
+            // Sunucu (Google E-Tablo) verisi her zaman esas alınır; silinmiş riskler yerel önbellekten geri gelmez.
+            const studentOps = opJson.opinions.filter((o: any) => String(o.studentNumber || '').trim() === sNum);
+            let bestAuthOp: any = null;
+            let bestAuthTs = -1;
+            let bestAuthIdx = -1;
 
-          // API'den gelen canlı görüşler
-          if (opJson?.success && Array.isArray(opJson.opinions)) {
-            const studentOps = opJson.opinions.filter((o: any) => String(o.studentNumber).trim() === sNum);
-            for (const op of studentOps) {
+            studentOps.forEach((op: any, idx: number) => {
               const opTeacher = (op.teacherName || '').toLowerCase().trim();
               if (opTeacher === tName || opTeacher === tUser) {
                 myFilled = true;
@@ -275,14 +319,58 @@ function ClassDetailsContent() {
               if (op.opinion && op.opinion.trim()) {
                 opCount++;
               }
-              if (Array.isArray(op.risks) && op.risks.length > 0) {
-                const parsedR = op.risks.map(Number).filter((n: number) => !isNaN(n));
-                currentRisks = Array.from(new Set([...currentRisks, ...parsedR]));
-                rCount = currentRisks.length;
+              const isAuth =
+                isAuthOpBranch(op.branch || '') ||
+                (Array.isArray(op.risks) && op.risks.length > 0) ||
+                (Array.isArray(op.groupTrainingDays) && op.groupTrainingDays.length > 0);
+              if (isAuth) {
+                const ts = parseTrTsClient(op.date || '');
+                if (!bestAuthOp || ts > bestAuthTs || (ts === bestAuthTs && idx >= bestAuthIdx)) {
+                  bestAuthOp = op;
+                  bestAuthTs = ts;
+                  bestAuthIdx = idx;
+                }
               }
-              if (Array.isArray(op.groupTrainingDays) && op.groupTrainingDays.length > 0) {
-                gDays = op.groupTrainingDays;
+            });
+
+            if (bestAuthOp) {
+              currentRisks = Array.isArray(bestAuthOp.risks)
+                ? bestAuthOp.risks.map(Number).filter((n: number) => !isNaN(n))
+                : [];
+              rCount = currentRisks.length;
+              gDays = Array.isArray(bestAuthOp.groupTrainingDays) ? bestAuthOp.groupTrainingDays : [];
+              if (gDays.length > 0 && studentOps.some((o: any) => {
+                const ot = (o.teacherName || '').toLowerCase().trim();
+                return ot === tName || ot === tUser;
+              })) {
+                myFilled = true;
               }
+            }
+          } else {
+            // Çevrimdışı / sunucu erişilemezse LocalStorage yedeğine dön
+            const evalRaw = localStorage.getItem(`student_eval_${sNum}`);
+            if (evalRaw) {
+              try {
+                const parsed = JSON.parse(evalRaw);
+                if (Array.isArray(parsed.risks)) {
+                  currentRisks = parsed.risks.map(Number).filter((n: number) => !isNaN(n));
+                  rCount = currentRisks.length;
+                }
+                if (Array.isArray(parsed.groupTrainingDays)) {
+                  gDays = parsed.groupTrainingDays;
+                  if (gDays.length > 0) myFilled = true;
+                }
+                if (parsed.opinions && typeof parsed.opinions === 'object') {
+                  for (const [uKey, opObj] of Object.entries<any>(parsed.opinions)) {
+                    if (uKey.toLowerCase().trim() === tUser) {
+                      myFilled = true;
+                    }
+                    if (opObj?.opinion && opObj.opinion.trim()) {
+                      opCount++;
+                    }
+                  }
+                }
+              } catch (e) {}
             }
           }
 
@@ -308,8 +396,7 @@ function ClassDetailsContent() {
     setIsExportingExcel(true);
     const toastId = toast.loading(`${currentClassName || 'Sınıf'} için resmi MEB Sınıf Risk Haritası Excel dosyası hazırlanıyor...`);
     try {
-      const { buildOfficialSingleClassRiskMapWorkbook } = await import('@/lib/meb-excel-export');
-      const XLSX = await import('xlsx');
+      const { buildOfficialSingleClassRiskMapBuffer, downloadExcelBuffer } = await import('@/lib/meb-excel-export');
       const { getCurrentAcademicYear } = await import('@/lib/academic-year');
       const academicYear = getCurrentAcademicYear();
 
@@ -324,18 +411,19 @@ function ClassDetailsContent() {
         };
       });
 
-      const schoolName = teacher?.schoolName || localStorage.getItem('last_school_name') || 'Okul Adı';
+      const schoolName = schoolMeta.schoolName || teacher?.schoolName || localStorage.getItem('last_school_name') || 'Okul Adı';
 
-      const wb = buildOfficialSingleClassRiskMapWorkbook({
+      const buffer = await buildOfficialSingleClassRiskMapBuffer({
         schoolName,
+        district: schoolMeta.district || '',
         academicYear,
         className: currentClassName || 'Sınıf/Şube',
-        classTeacher: teacher?.name || 'Sınıf Rehber Öğretmeni',
+        classTeacher: schoolMeta.classTeacher || teacher?.name || 'Sınıf Rehber Öğretmeni',
         students: studentsData
       });
 
       const cleanFileName = (currentClassName || 'Sinif').replace(/[\\/*?:[\]]/g, '_');
-      XLSX.writeFile(wb, `${academicYear}_${cleanFileName}_Sinif_Risk_Haritasi.xlsx`);
+      downloadExcelBuffer(buffer, `${academicYear}_${cleanFileName}_Sinif_Risk_Haritasi.xlsx`);
       toast.dismiss(toastId);
       toast.success(`${currentClassName} Sınıf Risk Haritası (MEB S.İ.4.a Şablonu) başarıyla indirildi!`);
     } catch (err: any) {
@@ -343,6 +431,72 @@ function ClassDetailsContent() {
       toast.error('Excel oluşturulurken hata: ' + err.message);
     } finally {
       setIsExportingExcel(false);
+    }
+  };
+
+  const handleTeacherAddStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const num = newStudentNumber.trim();
+    const name = newStudentName.trim();
+    if (!num || !name || !currentClassName) {
+      toast.error('Lütfen öğrenci numarası ve adı soyadı bilgilerini giriniz.');
+      return;
+    }
+
+    setIsAddingStudent(true);
+    try {
+      const sessionToken = teacher?.sessionToken || localStorage.getItem('teacher_session_token') || '';
+      const storedSpreadsheetId = teacher?.spreadsheetId || localStorage.getItem('active_spreadsheet_id') || '';
+      const schoolKey = teacher?.schoolKey || localStorage.getItem('last_school_key') || '';
+
+      const res = await fetch('/api/students', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(sessionToken ? { 'x-session-token': sessionToken } : {})
+        },
+        body: JSON.stringify({
+          action: 'add',
+          spreadsheetId: storedSpreadsheetId,
+          schoolKey,
+          sessionToken,
+          addedByTeacher: teacher?.name || teacher?.username || 'Öğretmen',
+          student: {
+            number: num,
+            name,
+            className: currentClassName,
+            gender: newStudentGender
+          }
+        })
+      });
+
+      const json = await res.json();
+      if (!res.ok) {
+        toast.error(json.error || 'Öğrenci eklenirken hata oluştu.');
+        return;
+      }
+
+      const updatedAllStudents: any[] = json.data?.students || [];
+      if (updatedAllStudents.length > 0) {
+        localStorage.setItem('school_students', JSON.stringify(updatedAllStudents));
+        const baseKey = getClassBaseKeyClient(currentClassName);
+        const classFiltered = updatedAllStudents.filter((s: any) =>
+          s.className && getClassBaseKeyClient(s.className) === baseKey
+        );
+        setStudents(classFiltered);
+      } else {
+        setStudents(prev => [...prev, { number: num, name, className: currentClassName, gender: newStudentGender }]);
+      }
+
+      toast.success(`${name} (${num}) sınıf listesine eklendi. Okul yöneticisi modülüne bilgi iletildi!`);
+      setNewStudentNumber('');
+      setNewStudentName('');
+      setNewStudentGender('Kız');
+      setShowAddStudentModal(false);
+    } catch (err: any) {
+      toast.error('Bağlantı hatası: ' + (err.message || 'Öğrenci eklenemedi.'));
+    } finally {
+      setIsAddingStudent(false);
     }
   };
 
@@ -391,6 +545,15 @@ function ClassDetailsContent() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
+          <button
+            onClick={() => setShowAddStudentModal(true)}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2.5 rounded-xl text-xs sm:text-sm flex items-center gap-2 transition-colors shadow-sm"
+            title="Bu sınıfa yeni nakil / kayıt öğrenci ekle (Yöneticiye bildirilir)"
+          >
+            <UserPlus className="w-4 h-4" />
+            Öğrenci Ekle
+          </button>
+
           <button
             onClick={handleExportClassExcel}
             disabled={isExportingExcel || students.length === 0}
@@ -460,8 +623,17 @@ function ClassDetailsContent() {
             <User className="w-10 h-10 text-slate-300 mx-auto" />
             <h3 className="text-base font-bold text-slate-800">Bu Sınıfta Kayıtlı Öğrenci Bulunamadı</h3>
             <p className="text-xs text-slate-500 max-w-md mx-auto">
-              Google E-Tablo'da veya sistemde bu sınıfa ait öğrenci kaydı bulunamadı. Lütfen yönetici panelinden E-Okul Öğrenci Listesi (PDF) dosyasının yüklendiğinden emin olun.
+              Google E-Tablo&apos;da veya sistemde bu sınıfa ait öğrenci kaydı bulunamadı. Yeni gelen bir öğrenciyi hemen aşağıdan ekleyebilirsiniz.
             </p>
+            <div className="pt-2">
+              <button
+                onClick={() => setShowAddStudentModal(true)}
+                className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold px-4 py-2.5 rounded-xl text-xs transition-colors shadow-sm"
+              >
+                <UserPlus className="w-4 h-4" />
+                Bu Sınıfa Öğrenci Ekle
+              </button>
+            </div>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -560,6 +732,107 @@ function ClassDetailsContent() {
           </div>
         )}
       </div>
+
+      {/* Öğretmen Sınıfa Öğrenci Ekleme Modalı */}
+      {showAddStudentModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-indigo-100 text-indigo-700 rounded-xl">
+                  <UserPlus className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm">Sınıfa Öğrenci Ekle</h3>
+                  <p className="text-[11px] text-slate-500">Eklediğiniz öğrenci yönetici ekranında bildirilecektir.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddStudentModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleTeacherAddStudent} className="p-6 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Sınıf / Şube</label>
+                <input
+                  type="text"
+                  value={currentClassName}
+                  readOnly
+                  className="w-full px-3.5 py-2.5 text-sm bg-slate-100 border border-slate-200 rounded-xl text-slate-700 font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Okul Numarası *</label>
+                <input
+                  type="text"
+                  required
+                  value={newStudentNumber}
+                  onChange={(e) => setNewStudentNumber(e.target.value)}
+                  placeholder="Örn: 145"
+                  className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Öğrencinin Adı Soyadı *</label>
+                <input
+                  type="text"
+                  required
+                  value={newStudentName}
+                  onChange={(e) => setNewStudentName(e.target.value)}
+                  placeholder="Örn: AHMET YILMAZ"
+                  className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Cinsiyet</label>
+                <div className="grid grid-cols-2 gap-3">
+                  {(['Kız', 'Erkek'] as const).map((g) => (
+                    <button
+                      key={g}
+                      type="button"
+                      onClick={() => setNewStudentGender(g)}
+                      className={`py-2.5 rounded-xl text-xs font-bold border transition-colors ${
+                        newStudentGender === g
+                          ? g === 'Kız'
+                            ? 'bg-pink-50 border-pink-400 text-pink-700'
+                            : 'bg-blue-50 border-blue-400 text-blue-700'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {g}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAddStudentModal(false)}
+                  className="px-4 py-2.5 rounded-xl text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+                >
+                  İptal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isAddingStudent}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 transition-colors shadow-sm"
+                >
+                  {isAddingStudent ? 'Ekleniyor...' : 'Öğrenciyi Kaydet'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

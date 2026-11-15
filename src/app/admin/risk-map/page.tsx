@@ -529,11 +529,10 @@ export default function AdminRiskMapPage() {
     setIsExporting(true);
     const toastId = toast.loading('Resmi MEB formatında Okul Risk Haritası Excel dosyası hazırlanıyor...');
     try {
-      const { buildOfficialSchoolRiskMapWorkbook } = await import('@/lib/meb-excel-export');
-      const XLSX = await import('xlsx');
+      const { buildOfficialSchoolRiskMapBuffer, downloadExcelBuffer } = await import('@/lib/meb-excel-export');
       const academicYear = getCurrentAcademicYear();
       
-      const wb = buildOfficialSchoolRiskMapWorkbook({
+      const buffer = await buildOfficialSchoolRiskMapBuffer({
         schoolName: schoolInfo.schoolName || "Okul Adı",
         district: schoolInfo.district || "-",
         academicYear,
@@ -543,7 +542,7 @@ export default function AdminRiskMapPage() {
         totals
       });
       
-      XLSX.writeFile(wb, `${academicYear}_Okul_Risk_Haritasi.xlsx`);
+      downloadExcelBuffer(buffer, `${academicYear}_Okul_Risk_Haritasi.xlsx`);
       toast.dismiss(toastId);
       toast.success("Bakanlık resmi şablonuyla birebir aynı Okul Risk Haritası (S.İ.2.a) başarıyla indirildi!");
     } catch (err: any) {
@@ -560,8 +559,7 @@ export default function AdminRiskMapPage() {
     setIsExportingSingleClass(targetClassName);
     const toastId = toast.loading(`${targetClassName} sınıfı için MEB Sınıf Risk Haritası şablonu hazırlanıyor...`);
     try {
-      const { buildOfficialSingleClassRiskMapWorkbook } = await import('@/lib/meb-excel-export');
-      const XLSX = await import('xlsx');
+      const { buildOfficialSingleClassRiskMapBuffer, downloadExcelBuffer } = await import('@/lib/meb-excel-export');
       const academicYear = getCurrentAcademicYear();
 
       const cleanKey = (name: string) => (name || '').toLowerCase().replace(/[^a-z0-9çğıöşü]/g, '');
@@ -577,7 +575,7 @@ export default function AdminRiskMapPage() {
         return rKey === targetKey || r.className === targetClassName;
       });
 
-      const wb = buildOfficialSingleClassRiskMapWorkbook({
+      const buffer = await buildOfficialSingleClassRiskMapBuffer({
         schoolName: schoolInfo.schoolName || "Okul Adı",
         district: schoolInfo.district || "-",
         academicYear,
@@ -587,7 +585,7 @@ export default function AdminRiskMapPage() {
       });
 
       const cleanFileName = targetClassName.replace(/[\\/*?:[\]]/g, '_');
-      XLSX.writeFile(wb, `${academicYear}_${cleanFileName}_Sinif_Risk_Haritasi.xlsx`);
+      downloadExcelBuffer(buffer, `${academicYear}_${cleanFileName}_Sinif_Risk_Haritasi.xlsx`);
       toast.dismiss(toastId);
       toast.success(`${targetClassName} Sınıf Risk Haritası (S.İ.4.a Şablonu) başarıyla indirildi!`);
     } catch (err: any) {
@@ -607,8 +605,7 @@ export default function AdminRiskMapPage() {
     setIsExportingAllClasses(true);
     const toastId = toast.loading(`Tüm sınıflar (${classRows.length} şube) için Sınıf Risk Haritaları çalışma kitabı oluşturuluyor...`);
     try {
-      const { buildOfficialAllClassesRiskMapWorkbook } = await import('@/lib/meb-excel-export');
-      const XLSX = await import('xlsx');
+      const { buildOfficialAllClassesRiskMapBuffer, downloadExcelBuffer } = await import('@/lib/meb-excel-export');
       const academicYear = getCurrentAcademicYear();
 
       const cleanKey = (name: string) => (name || '').toLowerCase().replace(/[^a-z0-9çğıöşü]/g, '');
@@ -627,14 +624,14 @@ export default function AdminRiskMapPage() {
         };
       });
 
-      const wb = buildOfficialAllClassesRiskMapWorkbook({
+      const buffer = await buildOfficialAllClassesRiskMapBuffer({
         schoolName: schoolInfo.schoolName || "Okul Adı",
         district: schoolInfo.district || "-",
         academicYear,
         classes: classesData
       });
 
-      XLSX.writeFile(wb, `${academicYear}_Tum_Siniflar_Sinif_Risk_Haritalari.xlsx`);
+      downloadExcelBuffer(buffer, `${academicYear}_Tum_Siniflar_Sinif_Risk_Haritalari.xlsx`);
       toast.dismiss(toastId);
       toast.success("Tüm sınıfların Sınıf Risk Haritaları tek Excel dosyasında sekmeler halinde başarıyla indirildi!");
     } catch (err: any) {

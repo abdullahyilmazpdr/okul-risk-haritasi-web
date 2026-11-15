@@ -422,6 +422,36 @@ export async function POST(req: NextRequest) {
       otherRiskNote: otherRiskNoteToSave
     });
 
+    // Sınıf öğretmeni / özel eğitim öğretmeni / idareci risk güncellediğinde (ekleme veya kaldırma),
+    // aynı öğrencinin diğer sınıf öğretmeni/idareci satırlarındaki risk bilgisini de tek doğruluk kaynağına eşitle.
+    // Aksi halde bir öğretmen riski kaldırdığında diğer öğretmenin eski satırındaki riskler yönetici ekranında kalmaya devam eder.
+    if (isCounselorOrAdmin) {
+      const targetNumClean = cleanTr(sNum);
+      for (const [k, otherRec] of recordsMap.entries()) {
+        if (k === incomingKey) continue;
+        if (cleanTr(otherRec.num) !== targetNumClean) continue;
+        const bClean = cleanTr(otherRec.branch || '');
+        const isOtherAuthoritative =
+          bClean.includes('sinif') ||
+          bClean.includes('rehber') ||
+          bClean.includes('ozel egitim') ||
+          bClean.includes('ozelegitim') ||
+          bClean.includes('mudur') ||
+          bClean.includes('idare') ||
+          bClean.includes('yonetici') ||
+          (Array.isArray(otherRec.risks) && otherRec.risks.length > 0);
+        if (isOtherAuthoritative) {
+          recordsMap.set(k, {
+            ...otherRec,
+            risks: risksToSave,
+            groupTrainingDays: groupDaysToSave,
+            otherRiskNote: otherRiskNoteToSave,
+            date: dateStr
+          });
+        }
+      }
+    }
+
     // Kayıtları öğrenci numarasına göre sırala
     const sortedRecords = Array.from(recordsMap.values());
     sortedRecords.sort((a, b) => {

@@ -54,13 +54,23 @@ function AdminNav() {
 }
 
 import { getSchoolsByAdmin, getSchoolData, checkTransferNotification, dismissTransferNotification } from '@/lib/db';
-import { School, ChevronDown, PlusCircle, AlertTriangle } from 'lucide-react';
+import { School, ChevronDown, PlusCircle, AlertTriangle, UserPlus, CheckCircle2 } from 'lucide-react';
 import { useSessionTimeout } from '@/lib/useSessionTimeout';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [schools, setSchools] = useState<any[]>([]);
   const [transferNotices, setTransferNotices] = useState<any[]>([]);
+  const [teacherAddedNotices, setTeacherAddedNotices] = useState<Array<{
+    number: string;
+    name: string;
+    className: string;
+    gender: string;
+    teacherName: string;
+    addedAt: string;
+    isPending: boolean;
+  }>>([]);
+  const [isAckingAdditions, setIsAckingAdditions] = useState(false);
   const [currentSchoolKey, setCurrentSchoolKey] = useState<string>('');
   const [currentSchoolName, setCurrentSchoolName] = useState<string>('');
   const [ssoAdminInfo, setSsoAdminInfo] = useState<any>(null);
@@ -166,6 +176,78 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
 
     return () => unsubscribe();
   }, [router, pathname]);
+
+  // Öğretmen tarafından sınıfa yeni eklenen öğrenciler için yönetici bildirimlerini yükle
+  useEffect(() => {
+    if (!currentSchoolKey || typeof window === 'undefined') return;
+    const spreadsheetId = localStorage.getItem('active_spreadsheet_id') || ssoAdminInfo?.spreadsheetId || '';
+    if (!spreadsheetId) return;
+
+    const googleToken = localStorage.getItem('google_access_token') || '';
+    const sessionToken = localStorage.getItem('teacher_session_token') || '';
+    const adminUid = auth.currentUser?.uid || ssoAdminInfo?.uid || '';
+    if (!googleToken && !sessionToken && !adminUid) return;
+
+    const url = new URL('/api/school-data', window.location.origin);
+    url.searchParams.set('schoolKey', currentSchoolKey);
+    url.searchParams.set('spreadsheetId', spreadsheetId);
+    if (adminUid) url.searchParams.set('adminUid', adminUid);
+
+    fetch(url.toString(), {
+      headers: {
+        ...(googleToken ? { 'Authorization': `Bearer ${googleToken}` } : {}),
+        ...(sessionToken ? { 'x-session-token': sessionToken } : {})
+      }
+    })
+      .then(r => r.ok ? r.json() : null)
+      .then(json => {
+        if (json?.data?.teacherAddedStudents && Array.isArray(json.data.teacherAddedStudents)) {
+          setTeacherAddedNotices(json.data.teacherAddedStudents.filter((item: any) => item.isPending));
+        }
+      })
+      .catch(() => {});
+  }, [currentSchoolKey, ssoAdminInfo, pathname]);
+
+  const handleAcknowledgeTeacherAdditions = async (targetNumbers?: string[]) => {
+    if (typeof window === 'undefined') return;
+    setIsAckingAdditions(true);
+    try {
+      const spreadsheetId = localStorage.getItem('active_spreadsheet_id') || ssoAdminInfo?.spreadsheetId || '';
+      const googleToken = localStorage.getItem('google_access_token') || '';
+      const sessionToken = localStorage.getItem('teacher_session_token') || '';
+      const adminUid = auth.currentUser?.uid || ssoAdminInfo?.uid || '';
+
+      const res = await fetch('/api/students', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(googleToken ? { 'Authorization': `Bearer ${googleToken}` } : {}),
+          ...(sessionToken ? { 'x-session-token': sessionToken } : {})
+        },
+        body: JSON.stringify({
+          action: 'acknowledge-teacher-added',
+          schoolKey: currentSchoolKey,
+          spreadsheetId,
+          adminUid,
+          sessionToken,
+          numbers: targetNumbers
+        })
+      });
+      if (res.ok) {
+        if (targetNumbers && targetNumbers.length > 0) {
+          const ackSet = new Set(targetNumbers.map(String));
+          setTeacherAddedNotices(prev => prev.filter(n => !ackSet.has(String(n.number))));
+        } else {
+          setTeacherAddedNotices([]);
+        }
+        toast.success('Öğretmen tarafından eklenen öğrenci bildirimi onaylandı.');
+      }
+    } catch (err) {
+      toast.error('Bildirim güncellenemedi.');
+    } finally {
+      setIsAckingAdditions(false);
+    }
+  };
 
   const handleSelectSchool = (newKey: string) => {
     if (newKey === '__add_new__') {
@@ -312,6 +394,67 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+          {teacherAddedNotices.length > 0 && (
+            <div className="p-4 bg-gradient-to-r from-indigo-50 to-emerald-50 border border-indigo-200 rounded-2xl shadow-xs space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-start gap-3">
+                  <div className="p-2 bg-indigo-100 text-indigo-700 rounded-xl shrink-0">
+                    <UserPlus className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-indigo-950">
+                      Öğretmen Tarafından Sınıfa Yeni Öğrenci Eklendi ({teacherAddedNotices.length} Bildirim)
+                    </h3>
+                    <p className="text-xs text-indigo-800 mt-0.5">
+                      Sınıf ekranından öğretmenleriniz tarafından aşağıdaki öğrenciler listeye eklenmiştir.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <Link
+                    href="/admin/upload"
+                    className="text-xs font-semibold text-indigo-700 hover:text-indigo-900 bg-white border border-indigo-200 px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    Öğrenci Listesini Aç
+                  </Link>
+                  <button
+                    onClick={() => handleAcknowledgeTeacherAdditions()}
+                    disabled={isAckingAdditions}
+                    className="text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 px-3 py-1.5 rounded-lg flex items-center gap-1 transition-colors shadow-xs"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                    Tümünü Gördüm / Onayla
+                  </button>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                {teacherAddedNotices.map((item) => (
+                  <div
+                    key={item.number}
+                    className="bg-white/90 border border-indigo-100 rounded-xl px-3 py-2 flex items-center justify-between gap-2 text-xs"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-bold text-slate-900 truncate">
+                        {item.number} - {item.name}
+                      </p>
+                      <p className="text-[11px] text-slate-600 truncate">
+                        <span className="font-semibold text-indigo-700">{item.className}</span>
+                        {' • '}Ekleyen: <strong>{item.teacherName}</strong>
+                        {item.addedAt ? ` (${item.addedAt})` : ''}
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => handleAcknowledgeTeacherAdditions([item.number])}
+                      disabled={isAckingAdditions}
+                      className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2.5 py-1 rounded-lg shrink-0 transition-colors"
+                    >
+                      Onayla
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
           )}
           {children}

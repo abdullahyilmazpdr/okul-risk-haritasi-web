@@ -276,12 +276,31 @@ function StudentDetailsContent() {
         .then(res => res.json())
           .then(json => {
             if (json.success && Array.isArray(json.opinions) && json.opinions.length > 0) {
+              const parseTrTs = (d: string) => {
+                if (!d) return 0;
+                const m = String(d).trim().match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+(\d{1,2}):(\d{1,2}))?/);
+                if (m) {
+                  const t = new Date(Number(m[3]), Number(m[2]) - 1, Number(m[1]), Number(m[4] || 0), Number(m[5] || 0)).getTime();
+                  if (!isNaN(t)) return t;
+                }
+                const f = Date.parse(String(d));
+                return isNaN(f) ? 0 : f;
+              };
+              const isAuthOpBranch = (branch: string) => {
+                const b = (branch || '').toLowerCase();
+                return b.includes('sınıf') || b.includes('sinif') || b.includes('rehber') || b.includes('özel eğitim') || b.includes('ozel egitim') || b.includes('müdür') || b.includes('mudur') || b.includes('idare') || b.includes('yönetici');
+              };
+
               const remoteOthers: any[] = [];
-              for (const op of json.opinions) {
+              let bestAuthOp: any = null;
+              let bestAuthTs = -1;
+              let bestAuthIdx = -1;
+
+              json.opinions.forEach((op: any, idx: number) => {
                 if (op.teacherName === parsedTeacher.name || op.teacherName === parsedTeacher.username) {
                   // Canlı E-Tablo verisi her zaman yerel önbellekten önceliklidir
-                  if (op.opinion) {
-                    setSokOpinion(op.opinion);
+                  if (op.opinion !== undefined) {
+                    setSokOpinion(op.opinion || '');
                   }
                 } else if (op.opinion) {
                   remoteOthers.push({
@@ -291,17 +310,39 @@ function StudentDetailsContent() {
                     date: op.date || ''
                   });
                 }
-                if (op.risks && Array.isArray(op.risks) && op.risks.length > 0) {
-                  setSelectedRisks(new Set(op.risks));
+
+                const isAuth = isAuthOpBranch(op.branch || '') || (Array.isArray(op.risks) && op.risks.length > 0) || (Array.isArray(op.groupTrainingDays) && op.groupTrainingDays.length > 0);
+                if (isAuth) {
+                  const ts = parseTrTs(op.date || '');
+                  if (!bestAuthOp || ts > bestAuthTs || (ts === bestAuthTs && idx >= bestAuthIdx)) {
+                    bestAuthOp = op;
+                    bestAuthTs = ts;
+                    bestAuthIdx = idx;
+                  }
                 }
-                if (op.groupTrainingDays && Array.isArray(op.groupTrainingDays) && op.groupTrainingDays.length > 0) {
-                  setIsGroupTraining(true);
-                  setGroupDays(op.groupTrainingDays);
-                }
-                if (op.otherRiskNote) {
-                  setOtherRiskNote(op.otherRiskNote);
-                }
+              });
+
+              if (bestAuthOp) {
+                const serverRisks = Array.isArray(bestAuthOp.risks) ? bestAuthOp.risks.map(Number).filter((n: number) => !isNaN(n)) : [];
+                const serverDays = Array.isArray(bestAuthOp.groupTrainingDays) ? bestAuthOp.groupTrainingDays : [];
+                const serverNote = bestAuthOp.otherRiskNote || '';
+
+                setSelectedRisks(new Set(serverRisks));
+                setIsGroupTraining(serverDays.length > 0);
+                setGroupDays(serverDays);
+                setOtherRiskNote(serverNote);
+
+                // Yerel önbelleği sunucudaki güncel veriye (silinmiş riskler dahil) eşitle
+                try {
+                  const curRaw = localStorage.getItem(`student_eval_${studentId}`);
+                  const curObj = curRaw ? JSON.parse(curRaw) : { opinions: {} };
+                  curObj.risks = serverRisks;
+                  curObj.groupTrainingDays = serverDays;
+                  curObj.otherRiskNote = serverNote;
+                  localStorage.setItem(`student_eval_${studentId}`, JSON.stringify(curObj));
+                } catch (e) {}
               }
+
               if (remoteOthers.length > 0) {
                 setOtherOpinions(prev => {
                   const map = new Map();

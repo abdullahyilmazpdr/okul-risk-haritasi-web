@@ -133,7 +133,7 @@ export async function GET(req: NextRequest) {
 
     // E-Tablo'dan Öğrenciler, Öğretmenler ve OkulRisk sayfalarını doğrudan oku (Firestore'da öğrenci/öğretmen verisi tutulmaz)
     const [studentRows, teacherRows, evalRows] = await Promise.all([
-      readSheetSafe('Öğrenciler!A2:C'),
+      readSheetSafe('Öğrenciler!A2:E'),
       readSheetSafe('Öğretmenler!A2:E'),
       readSheetSafe('OkulRisk!A2:B')
     ]);
@@ -142,7 +142,31 @@ export async function GET(req: NextRequest) {
       className: row[0] || '',
       number: row[1] || '',
       name: row[2] || '',
+      gender: row[3] || '',
+      addedMeta: row[4] || ''
     })).filter((s: any) => s.number || s.name);
+
+    const teacherAddedStudents = students
+      .map((s: any) => {
+        const meta = String(s.addedMeta || '').trim();
+        if (!meta) return null;
+        const parts = meta.split('|');
+        const status = parts[0] || '';
+        const teacherName = parts[1] || 'Öğretmen';
+        const addedAt = parts[2] || '';
+        if (!status.startsWith('BEKLEYEN') && !status.startsWith('ONAYLI')) return null;
+        return {
+          number: s.number,
+          name: s.name,
+          className: s.className,
+          gender: s.gender,
+          status,
+          isPending: status === 'BEKLEYEN',
+          teacherName,
+          addedAt
+        };
+      })
+      .filter(Boolean);
 
     const evaluatedStudentNums = new Set<string>();
     for (const r of evalRows || []) {
@@ -213,15 +237,7 @@ export async function GET(req: NextRequest) {
     });
 
     const schoolName = latestSchool?.schoolName || '';
-
-    const maskText = (text: string) => {
-      if (!text) return '';
-      return text
-        .split(' ')
-        .filter(Boolean)
-        .map(word => (word.length > 0 ? `${word[0]}***` : '***'))
-        .join(' ');
-    };
+    const district = latestSchool?.district || '';
 
     const maskCode = (code: string) => {
       if (!code) return '';
@@ -229,13 +245,17 @@ export async function GET(req: NextRequest) {
       return str.length > 2 ? `${str.slice(0, 2)}***` : `${str[0] || ''}***`;
     };
 
+    // Not: verifyOnly=true aşamasında okul adı maskelenir; bu noktaya yalnızca geçerli oturum (sessionToken/adminUid)
+    // doğrulamasından geçildikten sonra ulaşılır, dolayısıyla resmi MEB çıktıları için tam okul adı ve ilçe döndürülür.
     return NextResponse.json({
       success: true,
       data: {
-        schoolName: maskText(schoolName),
+        schoolName,
+        district,
         maskedSchoolKey: maskCode(schoolKey || latestSchool?.schoolKey || ''),
         students,
         teachers,
+        teacherAddedStudents,
         stats: {
           totalStudents: students.length,
           totalTeachers: teachers.length,

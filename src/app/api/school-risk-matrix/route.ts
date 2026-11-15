@@ -118,6 +118,7 @@ function getClassBaseKey(raw: string): string {
   return withoutParens
     .replace(/İ/g, 'i')
     .replace(/I/g, 'ı')
+    .replace(/ı/g, 'ı')
     .replace(/Ç/g, 'ç')
     .replace(/Ğ/g, 'ğ')
     .replace(/Ö/g, 'ö')
@@ -125,6 +126,36 @@ function getClassBaseKey(raw: string): string {
     .replace(/Ü/g, 'ü')
     .toLowerCase()
     .replace(/[^a-z0-9çğıöşü]/g, '');
+}
+
+function parseTrTimestamp(dateStr: string): number {
+  if (!dateStr) return 0;
+  const trimmed = String(dateStr).trim();
+  const match = trimmed.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\s+(\d{1,2}):(\d{1,2}))?/);
+  if (match) {
+    const day = Number(match[1]);
+    const month = Number(match[2]) - 1;
+    const year = Number(match[3]);
+    const hour = Number(match[4] || 0);
+    const minute = Number(match[5] || 0);
+    const dt = new Date(year, month, day, hour, minute).getTime();
+    if (!isNaN(dt)) return dt;
+  }
+  const fallback = Date.parse(trimmed);
+  return isNaN(fallback) ? 0 : fallback;
+}
+
+function isAuthoritativeRiskBranch(branch: string): boolean {
+  const b = cleanTr(branch || '');
+  return (
+    b.includes('sinif') ||
+    b.includes('rehber') ||
+    b.includes('ozel egitim') ||
+    b.includes('ozelegitim') ||
+    b.includes('mudur') ||
+    b.includes('idare') ||
+    b.includes('yonetici')
+  );
 }
 
 export async function GET(req: NextRequest) {
@@ -227,16 +258,20 @@ export async function GET(req: NextRequest) {
     }
 
     // 1. Öğrenci numarasına göre en güncel risk listesini ve giriş durumunu haritala
+    // Eski kayıtları birleştirmek (union) yerine en güncel sınıf öğretmeni/idareci kaydını esas alır.
     const studentRiskMap = new Map<string, number[]>();
+    const latestRiskRecordMap = new Map<string, { ts: number; rowIdx: number; risks: number[]; isAuth: boolean }>();
     const enteredStudentNumbers = new Set<string>();
     const opinionsList: any[] = [];
 
-    for (const row of riskRows) {
+    for (let rowIdx = 0; rowIdx < riskRows.length; rowIdx++) {
+      const row = riskRows[rowIdx];
       const rec = extractRecordFromRow(row);
       if (!rec) continue;
 
-      if (rec.num) {
-        enteredStudentNumbers.add(cleanTr(rec.num));
+      const sKey = rec.num ? cleanTr(rec.num) : '';
+      if (sKey) {
+        enteredStudentNumbers.add(sKey);
       }
 
       if (rec.opinion) {
@@ -251,10 +286,33 @@ export async function GET(req: NextRequest) {
         });
       }
 
-      if (rec.risks && Array.isArray(rec.risks) && rec.risks.length > 0) {
-        const existing = studentRiskMap.get(rec.num) || [];
-        studentRiskMap.set(rec.num, Array.from(new Set([...existing, ...rec.risks])));
+      if (sKey) {
+        const isAuthBranch = isAuthoritativeRiskBranch(rec.branch || '');
+        const hasRisks = Array.isArray(rec.risks) && rec.risks.length > 0;
+        if (isAuthBranch || hasRisks) {
+          const ts = parseTrTimestamp(rec.date || '');
+          const prev = latestRiskRecordMap.get(sKey);
+          const isNewer =
+            !prev ||
+            ts > prev.ts ||
+            (ts === prev.ts && (
+              (isAuthBranch && !prev.isAuth) ||
+              (isAuthBranch === prev.isAuth && rowIdx >= prev.rowIdx)
+            ));
+          if (isNewer) {
+            latestRiskRecordMap.set(sKey, {
+              ts,
+              rowIdx,
+              risks: Array.isArray(rec.risks) ? rec.risks : [],
+              isAuth: isAuthBranch
+            });
+          }
+        }
       }
+    }
+
+    for (const [sKey, entry] of latestRiskRecordMap.entries()) {
+      studentRiskMap.set(sKey, entry.risks);
     }
 
     // 2. Sınıfları tekilleştirerek belirle ve her sınıf için 36 risk maddesini ve giriş sayılarını say
@@ -328,7 +386,7 @@ export async function GET(req: NextRequest) {
       const risks = Array.from({ length: 36 }, (_, itemIdx) => {
         let count = 0;
         for (const st of classStudents) {
-          const stRisks = studentRiskMap.get(st.number);
+          const stRisks = studentRiskMap.get(cleanTr(st.number));
           if (stRisks && stRisks.includes(itemIdx)) {
             count++;
           }
@@ -364,7 +422,7 @@ export async function GET(req: NextRequest) {
     // Risk grubu öğrenci detay listesi (Yönetici detaylı raporlama ekranı için)
     const riskStudents = students
       .map(st => {
-        const stRisks = studentRiskMap.get(st.number) || [];
+        const stRisks = studentRiskMap.get(cleanTr(st.number)) || [];
         return {
           number: st.number,
           name: st.name,
@@ -380,7 +438,7 @@ export async function GET(req: NextRequest) {
       number: st.number,
       name: st.name,
       className: st.className,
-      risks: studentRiskMap.get(st.number) || []
+      risks: studentRiskMap.get(cleanTr(st.number)) || []
     }));
 
     const evaluatedStudentsCount = students.filter(st => enteredStudentNumbers.has(cleanTr(st.number))).length;

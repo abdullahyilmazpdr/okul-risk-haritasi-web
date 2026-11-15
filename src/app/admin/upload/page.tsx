@@ -153,6 +153,10 @@ export default function UploadPage() {
   const [studentFormGender, setStudentFormGender] = useState('Kız');
   const [isSavingStudent, setIsSavingStudent] = useState(false);
 
+  // Çoklu öğrenci seçimi ve toplu çıkarma (Nakil / Ayrılan) state'leri
+  const [selectedStudentNumbers, setSelectedStudentNumbers] = useState<string[]>([]);
+  const [isBulkDeletingStudents, setIsBulkDeletingStudents] = useState(false);
+
   // Karekod Kartları Modalı state'i
   const [showQrModal, setShowQrModal] = useState(false);
   const [currentSchoolName, setCurrentSchoolName] = useState('');
@@ -171,32 +175,43 @@ export default function UploadPage() {
   const fetchCurrentSchoolData = useCallback(async (user: any) => {
     setIsLoadingExisting(true);
     try {
+      const ssoRaw = typeof window !== 'undefined' ? localStorage.getItem('sso_admin_session') : null;
+      let ssoSession: any = null;
+      if (ssoRaw) {
+        try { ssoSession = JSON.parse(ssoRaw); } catch (e) {}
+      }
+
       const activeKey = typeof window !== 'undefined' ? localStorage.getItem('admin_active_school_key') : null;
-      const schoolData = await getSchoolData(user.uid, activeKey || undefined);
+      const effectiveKey = activeKey || ssoSession?.schoolKey || '';
+      const schoolData = user ? await getSchoolData(user.uid, effectiveKey || undefined) : ssoSession;
       if (!schoolData) {
         setIsLoadingExisting(false);
         return;
       }
 
       if (schoolData.schoolName) setCurrentSchoolName(schoolData.schoolName);
-      if (schoolData.schoolKey || activeKey) setCurrentSchoolKey(schoolData.schoolKey || activeKey || '');
+      if (schoolData.schoolKey || effectiveKey) setCurrentSchoolKey(schoolData.schoolKey || effectiveKey || '');
 
       if (schoolData.serviceAccountKey && typeof schoolData.serviceAccountKey === 'string') {
         setServiceAccountKey(schoolData.serviceAccountKey);
       }
 
-      if (!schoolData.spreadsheetId) {
+      const spreadsheetId = schoolData.spreadsheetId || (typeof window !== 'undefined' ? localStorage.getItem('active_spreadsheet_id') : '') || '';
+      if (!spreadsheetId) {
         setIsLoadingExisting(false);
         return;
       }
 
       const activeToken = localStorage.getItem('google_access_token') || schoolData.accessToken || '';
+      const sessionToken = localStorage.getItem('teacher_session_token') || '';
+      const uidParam = user?.uid || ssoSession?.uid || '';
 
       const res = await fetch(
-        `/api/school-data?spreadsheetId=${schoolData.spreadsheetId}&schoolKey=${encodeURIComponent(schoolData.schoolKey || activeKey || '')}&adminUid=${encodeURIComponent(user.uid)}&includePasswords=true`,
+        `/api/school-data?spreadsheetId=${spreadsheetId}&schoolKey=${encodeURIComponent(schoolData.schoolKey || effectiveKey || '')}&adminUid=${encodeURIComponent(uidParam)}&includePasswords=true`,
         {
           headers: {
-            ...(activeToken ? { 'Authorization': `Bearer ${activeToken}` } : {})
+            ...(activeToken ? { 'Authorization': `Bearer ${activeToken}` } : {}),
+            ...(sessionToken ? { 'x-session-token': sessionToken } : {})
           }
         }
       );
@@ -208,7 +223,7 @@ export default function UploadPage() {
           if (typeof window !== 'undefined') {
             if (json.data.teachers) localStorage.setItem('school_teachers', JSON.stringify(json.data.teachers));
             if (json.data.students) localStorage.setItem('school_students', JSON.stringify(json.data.students));
-            if (schoolData.spreadsheetId) localStorage.setItem('active_spreadsheet_id', schoolData.spreadsheetId);
+            if (spreadsheetId) localStorage.setItem('active_spreadsheet_id', spreadsheetId);
           }
         }
       }
@@ -224,7 +239,12 @@ export default function UploadPage() {
       if (user) {
         fetchCurrentSchoolData(user);
       } else {
-        setIsLoadingExisting(false);
+        const ssoRaw = typeof window !== 'undefined' ? localStorage.getItem('sso_admin_session') : null;
+        if (ssoRaw) {
+          fetchCurrentSchoolData(null);
+        } else {
+          setIsLoadingExisting(false);
+        }
       }
     });
 
@@ -711,6 +731,27 @@ export default function UploadPage() {
     setShowStudentModal(true);
   };
 
+  const resolveAdminStudentApiContext = async () => {
+    const ssoRaw = typeof window !== 'undefined' ? localStorage.getItem('sso_admin_session') : null;
+    let ssoSession: any = null;
+    if (ssoRaw) {
+      try { ssoSession = JSON.parse(ssoRaw); } catch (e) {}
+    }
+
+    const activeKey = typeof window !== 'undefined' ? localStorage.getItem('admin_active_school_key') : null;
+    const effectiveUid = auth.currentUser?.uid || ssoSession?.uid || '';
+    const schoolData = auth.currentUser
+      ? await getSchoolData(auth.currentUser.uid, activeKey || undefined)
+      : ssoSession;
+
+    const spreadsheetId = schoolData?.spreadsheetId || localStorage.getItem('active_spreadsheet_id') || '';
+    const schoolKey = schoolData?.schoolKey || activeKey || currentSchoolKey || '';
+    const activeToken = localStorage.getItem('google_access_token') || schoolData?.accessToken || '';
+    const sessionToken = localStorage.getItem('teacher_session_token') || '';
+
+    return { effectiveUid, spreadsheetId, schoolKey, activeToken, sessionToken };
+  };
+
   // Öğrenciyi E-Tabloya Kaydet (Ekle veya Güncelle)
   const handleSaveStudent = async () => {
     if (!studentFormNumber.trim() || !studentFormName.trim() || !studentFormClass.trim()) {
@@ -720,16 +761,13 @@ export default function UploadPage() {
 
     setIsSavingStudent(true);
     try {
-      if (!auth.currentUser) {
+      const ctx = await resolveAdminStudentApiContext();
+      if (!ctx.effectiveUid && !ctx.sessionToken) {
         toast.error("Yönetici oturumu bulunamadı. Lütfen giriş yapınız.");
         return;
       }
 
-      const activeKey = typeof window !== 'undefined' ? localStorage.getItem('admin_active_school_key') : null;
-      const schoolData = await getSchoolData(auth.currentUser.uid, activeKey || undefined);
-      const activeToken = localStorage.getItem('google_access_token') || schoolData?.accessToken || '';
-
-      if (!schoolData?.spreadsheetId) {
+      if (!ctx.spreadsheetId) {
         toast.error("Google E-Tablo bağlantısı eksik.");
         return;
       }
@@ -738,13 +776,15 @@ export default function UploadPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(activeToken ? { 'Authorization': `Bearer ${activeToken}` } : {})
+          ...(ctx.activeToken ? { 'Authorization': `Bearer ${ctx.activeToken}` } : {}),
+          ...(ctx.sessionToken ? { 'x-session-token': ctx.sessionToken } : {})
         },
         body: JSON.stringify({
           action: studentModalMode === 'add' ? 'add' : 'update',
-          spreadsheetId: schoolData.spreadsheetId,
-          schoolKey: schoolData.schoolKey || activeKey || '',
-          adminUid: auth.currentUser.uid,
+          spreadsheetId: ctx.spreadsheetId,
+          schoolKey: ctx.schoolKey,
+          adminUid: ctx.effectiveUid,
+          sessionToken: ctx.sessionToken,
           originalNumber: editingOriginalNumber,
           existingStudents: activeDisplayData?.students || [],
           student: {
@@ -792,17 +832,14 @@ export default function UploadPage() {
 
     const loadingToast = toast.loading("Öğrenci siliniyor...");
     try {
-      if (!auth.currentUser) {
+      const ctx = await resolveAdminStudentApiContext();
+      if (!ctx.effectiveUid && !ctx.sessionToken) {
         toast.dismiss(loadingToast);
         toast.error("Yönetici oturumu bulunamadı.");
         return;
       }
 
-      const activeKey = typeof window !== 'undefined' ? localStorage.getItem('admin_active_school_key') : null;
-      const schoolData = await getSchoolData(auth.currentUser.uid, activeKey || undefined);
-      const activeToken = localStorage.getItem('google_access_token') || schoolData?.accessToken || '';
-
-      if (!schoolData?.spreadsheetId) {
+      if (!ctx.spreadsheetId) {
         toast.dismiss(loadingToast);
         toast.error("Google E-Tablo bağlantısı eksik.");
         return;
@@ -812,13 +849,15 @@ export default function UploadPage() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(activeToken ? { 'Authorization': `Bearer ${activeToken}` } : {})
+          ...(ctx.activeToken ? { 'Authorization': `Bearer ${ctx.activeToken}` } : {}),
+          ...(ctx.sessionToken ? { 'x-session-token': ctx.sessionToken } : {})
         },
         body: JSON.stringify({
           action: 'delete',
-          spreadsheetId: schoolData.spreadsheetId,
-          schoolKey: schoolData.schoolKey || activeKey || '',
-          adminUid: auth.currentUser.uid,
+          spreadsheetId: ctx.spreadsheetId,
+          schoolKey: ctx.schoolKey,
+          adminUid: ctx.effectiveUid,
+          sessionToken: ctx.sessionToken,
           originalNumber: s.number,
           existingStudents: activeDisplayData?.students || []
         })
@@ -841,6 +880,7 @@ export default function UploadPage() {
 
       setExistingData(newData);
       if (results) setResults(newData);
+      setSelectedStudentNumbers(prev => prev.filter(n => n !== String(s.number)));
       if (typeof window !== 'undefined') {
         localStorage.setItem('school_students', JSON.stringify(updatedStudents));
       }
@@ -849,6 +889,103 @@ export default function UploadPage() {
     } catch (e: any) {
       toast.dismiss(loadingToast);
       toast.error("Hata: " + (e.message || "İşlem başarısız."));
+    }
+  };
+
+  // Tek öğrenci seçim kutusu toggle
+  const toggleSelectStudent = (studentNumber: string) => {
+    const cleanNum = String(studentNumber || '').trim();
+    if (!cleanNum) return;
+    setSelectedStudentNumbers(prev =>
+      prev.includes(cleanNum) ? prev.filter(n => n !== cleanNum) : [...prev, cleanNum]
+    );
+  };
+
+  // Bir sınıfın tüm öğrencilerini seç veya seçimi kaldır
+  const toggleSelectClassStudents = (classStudents: any[], shouldSelect: boolean) => {
+    const classNums = classStudents.map(s => String(s.number || '').trim()).filter(Boolean);
+    setSelectedStudentNumbers(prev => {
+      if (shouldSelect) {
+        return Array.from(new Set([...prev, ...classNums]));
+      }
+      const removeSet = new Set(classNums);
+      return prev.filter(n => !removeSet.has(n));
+    });
+  };
+
+  // Seçili Öğrencileri Toplu Çıkar (Nakil / Ayrılan)
+  const handleBulkDeleteStudents = async () => {
+    if (selectedStudentNumbers.length === 0) return;
+    if (
+      !window.confirm(
+        `Seçilen ${selectedStudentNumbers.length} öğrenciyi (nakil veya ayrılan vb.) okul listesinden kalıcı olarak çıkarmak istediğinize emin misiniz?`
+      )
+    ) {
+      return;
+    }
+
+    setIsBulkDeletingStudents(true);
+    const loadingToast = toast.loading(`${selectedStudentNumbers.length} öğrenci listeden çıkarılıyor...`);
+    try {
+      const ctx = await resolveAdminStudentApiContext();
+      if (!ctx.effectiveUid && !ctx.sessionToken) {
+        toast.dismiss(loadingToast);
+        toast.error("Yönetici oturumu bulunamadı.");
+        return;
+      }
+
+      if (!ctx.spreadsheetId) {
+        toast.dismiss(loadingToast);
+        toast.error("Google E-Tablo bağlantısı eksik.");
+        return;
+      }
+
+      const res = await fetch('/api/students', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(ctx.activeToken ? { 'Authorization': `Bearer ${ctx.activeToken}` } : {}),
+          ...(ctx.sessionToken ? { 'x-session-token': ctx.sessionToken } : {})
+        },
+        body: JSON.stringify({
+          action: 'bulk-delete',
+          spreadsheetId: ctx.spreadsheetId,
+          schoolKey: ctx.schoolKey,
+          adminUid: ctx.effectiveUid,
+          sessionToken: ctx.sessionToken,
+          numbers: selectedStudentNumbers,
+          existingStudents: activeDisplayData?.students || []
+        })
+      });
+
+      const json = await res.json();
+      toast.dismiss(loadingToast);
+
+      if (!res.ok) {
+        toast.error(json.error || "Öğrenciler çıkarılırken hata oluştu.");
+        return;
+      }
+
+      const updatedStudents = json.data?.students || [];
+      const currentTeachers = activeDisplayData?.teachers || [];
+      const newData = {
+        students: updatedStudents,
+        teachers: currentTeachers
+      };
+
+      setExistingData(newData);
+      if (results) setResults(newData);
+      setSelectedStudentNumbers([]);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('school_students', JSON.stringify(updatedStudents));
+      }
+
+      toast.success(json.message || "Seçilen öğrenciler listeden çıkarıldı.");
+    } catch (e: any) {
+      toast.dismiss(loadingToast);
+      toast.error("Hata: " + (e.message || "İşlem başarısız."));
+    } finally {
+      setIsBulkDeletingStudents(false);
     }
   };
 
@@ -1698,9 +1835,39 @@ export default function UploadPage() {
                 </div>
               </div>
 
+              {selectedStudentNumbers.length > 0 && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-rose-900">
+                    {selectedStudentNumbers.length} öğrenci seçildi (Nakil / Ayrılan)
+                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStudentNumbers([])}
+                      className="px-2.5 py-1.5 text-xs font-semibold text-slate-600 bg-white border border-slate-200 hover:bg-slate-50 rounded-lg transition-colors"
+                    >
+                      Seçimi Temizle
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleBulkDeleteStudents}
+                      disabled={isBulkDeletingStudents}
+                      className="px-3 py-1.5 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-50 rounded-lg flex items-center gap-1.5 transition-colors shadow-xs"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      {isBulkDeletingStudents ? 'Çıkarılıyor...' : `Seçilenleri Çıkar (${selectedStudentNumbers.length})`}
+                    </button>
+                  </div>
+                </div>
+              )}
+
               <div className="space-y-3 max-h-[550px] overflow-y-auto pr-1">
                 {Object.entries(groupedStudents).map(([className, classStudents]) => {
                   const isOpen = openClasses[className] ?? false;
+                  const classNums = classStudents.map((s: any) => String(s.number || '').trim()).filter(Boolean);
+                  const selectedInClassCount = classNums.filter(n => selectedStudentNumbers.includes(n)).length;
+                  const allClassSelected = classNums.length > 0 && selectedInClassCount === classNums.length;
+
                   return (
                     <div key={className} className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50/50">
                       <button
@@ -1714,6 +1881,11 @@ export default function UploadPage() {
                             <ChevronRight className="w-4 h-4 text-slate-500 flex-shrink-0" />
                           )}
                           <span className="font-semibold text-slate-800 text-sm line-clamp-1">{className}</span>
+                          {selectedInClassCount > 0 && (
+                            <span className="text-[10px] font-bold bg-rose-100 text-rose-700 px-2 py-0.5 rounded-full">
+                              {selectedInClassCount} seçili
+                            </span>
+                          )}
                         </div>
                         <span className="text-xs font-semibold bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-full flex-shrink-0 ml-2">
                           {classStudents.length} Öğrenci
@@ -1722,8 +1894,16 @@ export default function UploadPage() {
 
                       {isOpen && (
                         <div className="p-3 border-t border-slate-100 bg-white space-y-2">
-                          <div className="flex justify-between items-center px-1 pb-1">
-                            <span className="text-[11px] font-semibold text-slate-500">{className} Öğrenci Listesi</span>
+                          <div className="flex flex-wrap justify-between items-center gap-2 px-1 pb-1">
+                            <label className="flex items-center gap-1.5 text-[11px] font-semibold text-slate-600 cursor-pointer select-none">
+                              <input
+                                type="checkbox"
+                                checked={allClassSelected}
+                                onChange={(e) => toggleSelectClassStudents(classStudents, e.target.checked)}
+                                className="rounded border-slate-300 text-rose-600 focus:ring-rose-500"
+                              />
+                              <span>{className} Tümünü Seç</span>
+                            </label>
                             <button
                               type="button"
                               onClick={() => openAddStudentModal(className)}
@@ -1732,17 +1912,51 @@ export default function UploadPage() {
                               <UserPlus className="w-3 h-3" /> Bu Sınıfa Öğrenci Ekle
                             </button>
                           </div>
-                          {classStudents.map((s: any, idx: number) => (
-                            <div key={idx} className="flex justify-between items-center py-1.5 px-3 bg-slate-50 hover:bg-slate-100 rounded-lg text-xs group transition-colors">
+                          {classStudents.map((s: any, idx: number) => {
+                            const sNumStr = String(s.number || '').trim();
+                            const isChecked = selectedStudentNumbers.includes(sNumStr);
+                            const metaStr = String(s.addedMeta || '').trim();
+                            const metaParts = metaStr ? metaStr.split('|') : [];
+                            const isPendingTeacherAdd = metaParts[0] === 'BEKLEYEN';
+                            const isApprovedTeacherAdd = metaParts[0] === 'ONAYLI';
+                            const addedTeacherName = metaParts[1] || '';
+
+                            return (
+                            <div
+                              key={idx}
+                              className={`flex justify-between items-center py-1.5 px-3 rounded-lg text-xs group transition-colors ${
+                                isChecked ? 'bg-rose-50 border border-rose-200' : 'bg-slate-50 hover:bg-slate-100'
+                              }`}
+                            >
                               <div className="flex items-center gap-2 min-w-0">
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => toggleSelectStudent(sNumStr)}
+                                  className="rounded border-slate-300 text-rose-600 focus:ring-rose-500 flex-shrink-0"
+                                  title="Toplu çıkarma için seç"
+                                />
                                 <span className="font-medium text-slate-800 truncate">{s.number} - {s.name}</span>
                                 {s.gender && s.gender !== 'Belirtilmedi' && (
-                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                                  <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium shrink-0 ${
                                     s.gender.toLowerCase().includes('kız') 
                                       ? 'bg-pink-100 text-pink-700' 
                                       : 'bg-blue-100 text-blue-700'
                                   }`}>
                                     {s.gender}
+                                  </span>
+                                )}
+                                {(isPendingTeacherAdd || isApprovedTeacherAdd) && (
+                                  <span
+                                    className={`text-[10px] px-1.5 py-0.5 rounded font-semibold shrink-0 ${
+                                      isPendingTeacherAdd
+                                        ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                                        : 'bg-indigo-50 text-indigo-700 border border-indigo-200'
+                                    }`}
+                                    title={metaParts[2] ? `Eklenme tarihi: ${metaParts[2]}` : undefined}
+                                  >
+                                    {isPendingTeacherAdd ? 'Yeni • Öğretmen Ekledi' : 'Öğretmen Ekledi'}
+                                    {addedTeacherName ? `: ${addedTeacherName}` : ''}
                                   </span>
                                 )}
                               </div>
@@ -1766,7 +1980,7 @@ export default function UploadPage() {
                                 </button>
                               </div>
                             </div>
-                          ))}
+                          );})}
                         </div>
                       )}
                     </div>
