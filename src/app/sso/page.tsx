@@ -11,7 +11,7 @@ function SsoHandler() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const [statusText, setStatusText] = useState('Meram Mobil kimlik bilgileri alınıyor...');
+  const [statusText, setStatusText] = useState('Tek tıkla geçiş bilgileri alınıyor...');
   const [error, setError] = useState<string | null>(null);
 
   const schoolKey = searchParams.get('schoolKey') || '752927';
@@ -28,11 +28,15 @@ function SsoHandler() {
 
     async function processSso() {
       if (!name) {
-        setError('Kullanıcı kimlik bilgisi eksik. Lütfen Meram Mobil uygulamasından tekrar giriş yapınız.');
+        setError('Kullanıcı kimlik bilgisi eksik. Lütfen kaynak uygulamadan tekrar giriş yapınız.');
         return;
       }
 
-      setStatusText(`Sayın ${name}, oturumunuz doğrulanıyor...`);
+      setStatusText(
+        source === 'riba-onlinepdr'
+          ? `RİBA üzerinden Sayın ${name} kimliği doğrulanıyor...`
+          : `Sayın ${name}, oturumunuz doğrulanıyor...`
+      );
 
       try {
         const res = await fetch('/api/sso', {
@@ -75,6 +79,8 @@ function SsoHandler() {
           if (data.spreadsheetId) {
             localStorage.setItem('active_spreadsheet_id', data.spreadsheetId);
           }
+          localStorage.setItem('admin_session_last_active', String(Date.now()));
+          localStorage.setItem('teacher_session_last_active', String(Date.now()));
 
           // Ayrıca öğretmen paneline de tek tıkla geçebilmesi için öğretmen oturumunu hazırla
           if (data.teacher && data.teacherSessionToken) {
@@ -114,6 +120,7 @@ function SsoHandler() {
               localStorage.setItem('active_spreadsheet_id', data.teacher.spreadsheetId);
             }
           }
+          localStorage.setItem('teacher_session_last_active', String(Date.now()));
           if (Array.isArray(data.students) && data.students.length > 0) {
             localStorage.setItem('school_students', JSON.stringify(data.students));
           }
