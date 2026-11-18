@@ -1,7 +1,35 @@
 User-agent: *
 Allow: /
+Allow: /rehber
+Allow: /login
+Allow: /teacher/login
+Allow: /llms.txt
+Allow: /sitemap.xml
+Allow: /ads.txt
 Disallow: /admin/
-Disallow: /teacher/
 Disallow: /api/
+Disallow: /sso
+Disallow: /teacher$
+Disallow: /teacher/class/
+Disallow: /teacher/profile
 
-Sitemap: https://okulrisk.vercel.app/sitemap.xml
+User-agent: GPTBot
+User-agent: OAI-SearchBot
+User-agent: ChatGPT-User
+User-agent: ClaudeBot
+User-agent: anthropic-ai
+User-agent: Google-Extended
+User-agent: PerplexityBot
+User-agent: Applebot-Extended
+Allow: /
+Allow: /rehber
+Allow: /llms.txt
+Allow: /sitemap.xml
+Disallow: /admin/
+Disallow: /api/
+Disallow: /sso
+Disallow: /teacher$
+Disallow: /teacher/class/
+Disallow: /teacher/profile
+
+Sitemap: https://risk.onlinepdr.com/sitemap.xml

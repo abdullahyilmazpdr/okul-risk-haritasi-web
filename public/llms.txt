@@ -1,0 +1,18 @@
+# risk.onlinepdr.com — Okul Risk Haritası ve ŞÖK Yönetim Sistemi
+
+> OnlinePDR ekosisteminin (onlinepdr.com, risk.onlinepdr.com, riba.onlinepdr.com) parçası olarak geliştirilen; Türkiye'deki okul psikolojik danışmanları, sınıf rehber öğretmenleri, branş öğretmenleri ve okul idareleri için MEB Özel Eğitim ve Rehberlik Hizmetleri Genel Müdürlüğü (ÖRGM) ve RAM standartlarına uyumlu 36 risk faktörlü Sınıf/Okul Risk Haritası ve ŞÖK otomasyon platformu.
+
+## Temel Yetenekler
+- **36 Risk Faktörü Matrix Hesaplaması:** Sınıf rehber öğretmenleri kendi şubelerindeki öğrenciler için risk faktörlerini işaretler; sistem sınıf toplamlarını ve okul konsolide Okul Risk Haritası tablosunu otomatik oluşturur.
+- **ŞÖK Öğretmen Görüşleri:** Ders/branş öğretmenleri yalnızca görüş girer (risk haritasını görmez), sınıf rehber öğretmenleri şube ŞÖK raporlarını derler.
+- **E-Okul PDF Ayrıştırma:** E-Okul Sınıf Öğrenci Listesi ve Öğretmen Ders Programı PDF dosyalarından sınıf, öğrenci ve öğretmen kullanıcı bilgilerini tek adımda çıkarır.
+- **RİBA Entegrasyonu:** risk.onlinepdr.com kullanan okullar tek tık SSO geçişi ve ortak öğretmen şifreleriyle `https://riba.onlinepdr.com` (MEB RİBA Otomasyonu) sistemini ek kurulum gerektirmeden kullanabilir.
+
+## Gizlilik ve 6698 Sayılı KVKK Uyumu
+- Merkezi sunucu veritabanında öğrenci adı, soyadı veya risk değerlendirmesi tutulmaz; tüm listeler kurumun kendi Google Drive hesabındaki Google E-Tablosunda (`Öğrenciler`, `Öğretmenler`, `OkulRisk`) saklanır.
+
+## İlgili Bağlantılar
+- Uygulama Girişi: https://risk.onlinepdr.com
+- Görsel Kullanım Kılavuzu: https://risk.onlinepdr.com/rehber
+- Risk Haritası Detaylı Bilgi Rehberi: https://onlinepdr.com/sinif-ve-okul-risk-haritasi.html
+- Online RİBA Otomasyonu: https://riba.onlinepdr.com

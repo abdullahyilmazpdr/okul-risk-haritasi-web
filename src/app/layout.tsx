@@ -15,6 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL || 'https://risk.onlinepdr.com'),
   title: {
     default: "Okul Risk Haritası ve ŞÖK Sistemi | MEB Uyumlu E-Tablo Otomasyonu",
     template: "%s | Okul Risk Haritası ve ŞÖK Sistemi"
@@ -61,11 +62,20 @@ export const metadata: Metadata = {
     title: "Okul Risk Haritası ve ŞÖK Sistemi | MEB Uyumlu E-Tablo Otomasyonu",
     description: "MEB ve RAM standartlarına tam uyumlu, sunucusuz ve %100 güvenli Google Drive tabanlı Okul Risk Haritası ve ŞÖK yönetim platformu.",
     siteName: "Okul Risk Haritası ve ŞÖK Sistemi",
+    images: [
+      {
+        url: "https://onlinepdr.com/assets/img/sinif-ve-okul-risk-haritasi.jpg",
+        width: 1200,
+        height: 675,
+        alt: "Okul Risk Haritası ve ŞÖK Sistemi",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
     title: "Okul Risk Haritası ve ŞÖK Sistemi",
     description: "MEB ve RAM uyumlu, Google Drive üzerinde çalışan Okul Risk Haritası otomasyonu.",
+    images: ["https://onlinepdr.com/assets/img/sinif-ve-okul-risk-haritasi.jpg"],
   },
   alternates: {
     canonical: "https://risk.onlinepdr.com",
@@ -104,6 +114,12 @@ j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
 'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
 })(window,document,'script','dataLayer','GTM-PFZ4T344');`,
           }}
+        />
+        {/* Google AdSense */}
+        <script
+          async
+          src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-6640600529852358"
+          crossOrigin="anonymous"
         />
       </head>
       <body className="min-h-full flex flex-col">

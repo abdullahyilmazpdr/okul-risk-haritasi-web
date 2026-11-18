@@ -1,5 +1,7 @@
 'use client';
 
+import RibaSwitchButton from '@/components/RibaSwitchButton';
+
 import { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
@@ -196,6 +198,7 @@ function TeacherLayoutContent({ children }: { children: React.ReactNode }) {
           <Suspense fallback={<div className="flex-1 px-4" />}>
             <TeacherNav />
           </Suspense>
+          <RibaSwitchButton role="teacher" />
           <div className="p-4">
             <button
               onClick={handleLogout}

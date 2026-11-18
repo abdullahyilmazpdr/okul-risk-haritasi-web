@@ -171,12 +171,130 @@ export default function HomePage() {
             </div>
           </div>
         </div>
+
+        {/* Sıkça Sorulan Sorular (SEO ve Yapay Zeka Uyumlu) */}
+        <section className="mt-10 bg-slate-800/30 border border-slate-700/60 rounded-3xl p-8 text-left space-y-5">
+          <h2 className="text-xl font-bold text-white">
+            Sıkça Sorulan Sorular (Sınıf &amp; Okul Risk Haritası)
+          </h2>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 text-xs text-slate-300 leading-relaxed">
+            <div className="bg-slate-900/40 border border-slate-700/50 rounded-2xl p-4 space-y-1.5">
+              <h3 className="font-semibold text-white text-sm">
+                Sınıf ve Okul Risk Haritasını kimler doldurur, ne zaman RAM&apos;a gönderilir?
+              </h3>
+              <p>
+                Tüm sınıf rehber öğretmenleri kendi şubesi için Sınıf Risk Haritasını hazırlar; varsa okul psikolojik danışmanı / rehber öğretmeni (yoksa okul idaresi) okul geneli Okul Risk Haritasını birleştirir ve kasım ayı sonuna doğru bağlı bulunulan RAM&apos;a iletir.
+              </p>
+            </div>
+            <div className="bg-slate-900/40 border border-slate-700/50 rounded-2xl p-4 space-y-1.5">
+              <h3 className="font-semibold text-white text-sm">
+                Sistemde hangi risk faktörleri yer alır?
+              </h3>
+              <p>
+                MEB Özel Eğitim ve Rehberlik Hizmetleri Genel Müdürlüğü (ÖRGM) standartlarına uygun 36 öğrenci risk faktörü şube ve okul düzeyinde tek ekranda sayısallaştırılır.
+              </p>
+            </div>
+            <div className="bg-slate-900/40 border border-slate-700/50 rounded-2xl p-4 space-y-1.5">
+              <h3 className="font-semibold text-white text-sm">
+                Öğretmen şifreleri RİBA sisteminde de geçerli mi?
+              </h3>
+              <p>
+                Evet. risk.onlinepdr.com üzerinden oluşturulan öğretmen şifreleri riba.onlinepdr.com uygulamasında da doğrudan çalışır ve sol menüdeki RİBA butonundan tek tıkla geçiş yapılabilir.
+              </p>
+            </div>
+            <div className="bg-slate-900/40 border border-slate-700/50 rounded-2xl p-4 space-y-1.5">
+              <h3 className="font-semibold text-white text-sm">
+                Öğrenci verileri nerede tutulur, KVKK açısından güvenli midir?
+              </h3>
+              <p>
+                Öğrenci ve öğretmen listeleri ile tüm risk haritası kayıtları merkezi bir veritabanında değil, kurumunuzun kendi Google Drive hesabındaki Google E-Tablo dosyasında saklanır.
+              </p>
+            </div>
+          </div>
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{
+              __html: JSON.stringify({
+                '@context': 'https://schema.org',
+                '@graph': [
+                  {
+                    '@type': 'SoftwareApplication',
+                    name: 'Okul Risk Haritası ve ŞÖK Sistemi',
+                    applicationCategory: 'EducationalApplication',
+                    operatingSystem: 'Web',
+                    url: 'https://risk.onlinepdr.com',
+                    inLanguage: 'tr',
+                    offers: { '@type': 'Offer', price: '0', priceCurrency: 'TRY' },
+                    publisher: {
+                      '@type': 'Organization',
+                      name: 'OnlinePDR',
+                      url: 'https://onlinepdr.com',
+                    },
+                    description:
+                      'MEB ÖRGM ve RAM standartlarına tam uyumlu 36 risk faktörlü Sınıf/Okul Risk Haritası ve ŞÖK Google Drive otomasyonu.',
+                  },
+                  {
+                    '@type': 'FAQPage',
+                    mainEntity: [
+                      {
+                        '@type': 'Question',
+                        name: "Sınıf ve Okul Risk Haritasını kimler doldurur, ne zaman RAM'a gönderilir?",
+                        acceptedAnswer: {
+                          '@type': 'Answer',
+                          text: "Tüm sınıf rehber öğretmenleri kendi şubesi için Sınıf Risk Haritasını hazırlar; varsa okul rehber öğretmeni/psikolojik danışmanı (yoksa okul idaresi) okul geneli Okul Risk Haritasını oluşturur ve kasım ayı sonuna doğru bağlı bulundukları RAM'a gönderir.",
+                        },
+                      },
+                      {
+                        '@type': 'Question',
+                        name: 'Sistemde hangi risk faktörleri yer alır?',
+                        acceptedAnswer: {
+                          '@type': 'Answer',
+                          text: 'MEB Özel Eğitim ve Rehberlik Hizmetleri Genel Müdürlüğü standartlarına uygun 36 öğrenci risk faktörü sınıf ve okul matrisi olarak otomatik hesaplanır.',
+                        },
+                      },
+                      {
+                        '@type': 'Question',
+                        name: "Öğretmen şifreleri RİBA sisteminde de geçerli mi?",
+                        acceptedAnswer: {
+                          '@type': 'Answer',
+                          text: 'Evet. risk.onlinepdr.com öğretmen kullanıcı adı ve şifreleri riba.onlinepdr.com sisteminde de doğrudan geçerlidir ve tek tık SSO geçişi yapılabilir.',
+                        },
+                      },
+                      {
+                        '@type': 'Question',
+                        name: 'Öğrenci verileri nerede tutulur, KVKK açısından güvenli midir?',
+                        acceptedAnswer: {
+                          '@type': 'Answer',
+                          text: 'Öğrenci listeleri ve risk haritası değerlendirmeleri sunucu veritabanında değil, kurumun kendi Google Drive hesabındaki Google E-Tablosunda saklanır.',
+                        },
+                      },
+                    ],
+                  },
+                ],
+              }),
+            }}
+          />
+        </section>
       </main>
 
       {/* Alt Bilgi Footer */}
       <footer className="border-t border-slate-800 py-6 text-center text-xs text-slate-500">
         <div className="max-w-6xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>&copy; 2026 Okul Risk Haritası ve ŞÖK Sistemi — onlinepdr.com</span>
+          <div className="flex flex-wrap items-center justify-center gap-4">
+            <Link href="/rehber" className="hover:text-slate-300">
+              Kullanım Rehberi
+            </Link>
+            <a href="https://riba.onlinepdr.com" className="hover:text-slate-300">
+              Online RİBA
+            </a>
+            <a href="/llms.txt" className="hover:text-slate-300">
+              AI / LLMs
+            </a>
+            <a href="https://onlinepdr.com/sinif-ve-okul-risk-haritasi.html" className="hover:text-slate-300">
+              Risk Haritası Makalesi
+            </a>
+          </div>
           <span className="flex items-center gap-1">
             Türk PDR Camiası İçin Sevgiyle Tasarlandı <Heart className="w-3.5 h-3.5 text-rose-500 inline" />
           </span>
