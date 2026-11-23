@@ -5,7 +5,7 @@ import { readFromSheet, getSystemServiceAccountCreds } from '@/lib/sheets';
 import { generateTeacherToken } from '@/lib/session-token';
 import { deduplicateClasses } from '@/lib/pdf-parser';
 
-const SSO_SECRET = process.env.SSO_SECRET || 'meram-oeuo-risk-sso-bridge-key-2026';
+const SSO_SECRET = process.env.SSO_SECRET || 'e31582de2ee03730fb36952f34858fa2d311ddead6d44134';
 
 // Türkçe ve özel karakterleri latin küçük harflere çevirici
 function cleanTr(str: string): string {
