@@ -5,7 +5,9 @@ import { readFromSheet, getSystemServiceAccountCreds } from '@/lib/sheets';
 import { generateTeacherToken } from '@/lib/session-token';
 import { deduplicateClasses } from '@/lib/pdf-parser';
 
-const SSO_SECRET = process.env.SSO_SECRET || 'e31582de2ee03730fb36952f34858fa2d311ddead6d44134';
+const ENV_SSO_SECRET = (process.env.SSO_SECRET || '').trim();
+const MERAM_DEFAULT_SECRET = 'meram-oeuo-risk-sso-bridge-key-2026';
+const ALLOWED_SECRETS = Array.from(new Set([ENV_SSO_SECRET, MERAM_DEFAULT_SECRET].filter(Boolean)));
 
 // Türkçe ve özel karakterleri latin küçük harflere çevirici
 function cleanTr(str: string): string {
@@ -45,13 +47,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Güvenlik 2: Kriptografik İmza Doğrulama (URL Tahrifatı Koruması)
-    const expectedSig = crypto
-      .createHash('sha256')
-      .update(`${uid}:${role}:${ts}:${SSO_SECRET}`)
-      .digest('hex');
-
-    if (!sig || sig !== expectedSig) {
+    // Güvenlik 2: Kriptografik İmza Doğrulama
+    const isValidSig = !!sig && ALLOWED_SECRETS.some((sec) => {
+      const expected = crypto.createHash('sha256').update(`${uid}:${role}:${ts}:${sec}`).digest('hex');
+      return sig === expected;
+    });
+    if (!isValidSig) {
       return NextResponse.json(
         { error: 'Güvenlik doğrulaması başarısız oldu (Yetkisiz geçiş denemesi veya tahrif edilmiş bağlantı).' },
         { status: 403 }
